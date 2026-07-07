@@ -1,0 +1,12 @@
+[package]
+name = "slime_chunk_scanner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rayon = "1.8"
+
+[profile.release]
+lto = true          # 开启全链路优化（编译慢，但跑得快）
+codegen-units = 1   # 全局视角优化
+panic = "abort"     # 减少异常处理开销
