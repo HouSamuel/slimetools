@@ -76,12 +76,12 @@ fn flatten_pattern(pattern_rows: &[&[u8]]) -> Pattern {
     }
 }
 
-fn generate_challenge_code() -> String {
+fn generate_challenge_code() -> u32 {
     let now = chrono::Local::now();
     let timestamp = now.timestamp();
     let minutes_since_epoch = timestamp / 60;
     let ten_minute_block = minutes_since_epoch / 10;
-    format!("{:08x}", ten_minute_block)
+    ten_minute_block as u32
 }
 
 fn validate(config: &Config) -> Result<(), String> {
@@ -139,12 +139,19 @@ fn validate(config: &Config) -> Result<(), String> {
     Ok(())
 }
 
-fn estimate_map_file_size(config: &Config, x_count: usize, z_count: usize) -> f64 {
-    let cell_width = 2;
-    let header_lines = 5;
+fn estimate_map_file_size(_config: &Config, x_count: usize, z_count: usize) -> f64 {
+    let max_coord = (x_count / 2) as i32;
+    let num_digits = if max_coord == 0 {
+        1
+    } else {
+        ((max_coord as f64).log10().floor() + 1.0) as usize + 1
+    };
+    let cell_width = num_digits + 1;
+    let z_col_width = num_digits + 1;
+    let header_lines = 10;
     let line_ending = 2;
     
-    let line_size = (10 + x_count * cell_width + line_ending) as f64;
+    let line_size = (z_col_width + x_count * cell_width + line_ending) as f64;
     let total_size_bytes = (z_count + header_lines) as f64 * line_size;
     total_size_bytes / (1024.0 * 1024.0 * 1024.0)
 }
@@ -167,14 +174,14 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
     
     if should_require_challenge(config, x_count, z_count) {
         let correct_code = generate_challenge_code();
-        match &config.challenge_code {
+        match config.challenge_code {
             Some(input_code) => {
-                if input_code != &correct_code {
-                    return Err(format!("挑战码错误！正确挑战码: {}", correct_code));
+                if input_code != correct_code {
+                    return Err(format!("挑战码错误！正确挑战码: 0x{:08x}", correct_code));
                 }
             }
             None => {
-                return Err(format!("安全模式已启用，预估map文件大于5GiB，请输入挑战码！当前挑战码: {}", correct_code));
+                return Err(format!("安全模式已启用，预估map文件大于5GiB，请输入挑战码！当前挑战码: 0x{:08x}", correct_code));
             }
         }
     }
@@ -203,7 +210,7 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
     let z_headers: Vec<Vec<u8>> = (min_block_z..=max_block_z)
         .rev()
         .map(|z| {
-            let s = format!("{:>width$} ", z, width = z_col_width);
+            let s = format!("{:>width$}|", z, width = z_col_width);
             s.into_bytes()
         })
         .collect();
@@ -212,15 +219,18 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
         num_width(min_block_x),
         num_width(max_block_x),
     );
+    let cell_width = x_header_width + 1;
     
     let x_headers: Vec<Vec<u8>> = (min_block_x..=max_block_x)
         .map(|x| {
-            format!("{:>width$}", x, width = x_header_width).into_bytes()
+            format!("{:>width$} ", x, width = x_header_width).into_bytes()
         })
         .collect();
     
-    let one_cell = String::from("1").into_bytes();
-    let zero_cell = String::from("0").into_bytes();
+    let mut zero_cell = vec![b' '; cell_width];
+    zero_cell[0] = b'0';
+    let mut one_cell = vec![b' '; cell_width];
+    one_cell[0] = b'1';
     
     let memory_limit_bytes = if config.memory_limit_gib > 0.0 {
         Some((config.memory_limit_gib * 1024.0 * 1024.0 * 1024.0) as usize)

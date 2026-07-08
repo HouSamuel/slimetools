@@ -82,7 +82,8 @@ pub struct Config {
     pub secure_mode: bool,
     
     /// 用户输入的挑战码，安全模式下必须正确才能正常运行
-    pub challenge_code: Option<String>,
+    /// 支持十六进制输入，例如：0x002d5b70
+    pub challenge_code: Option<u32>,
     
     /// 进度更新分度值（百分比），输入1表示每1%更新一次终端
     pub progress_update_interval: f64,
@@ -106,7 +107,7 @@ pub const CONFIG: Config = Config {
     world_seed: 20260627,
     center_block_x: 0,
     center_block_z: 0,
-    radius: 100,
+    radius: 5,
     mode: Mode::Check,
     memory_limit_gib: 4.0,
     

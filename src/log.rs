@@ -19,7 +19,7 @@ fn is_full(config: &Config) -> bool {
 }
 
 fn get_timestamp() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()
+    chrono::Local::now().format("%Y%m%d_%H%M%S").to_string()
 }
 
 pub struct LogWriterInner {
@@ -33,13 +33,14 @@ impl LogWriterInner {
             return None;
         }
         
-        let log_filename = format!("{}_log_{}.log", config.world_seed, chrono::Local::now().format("%Y%m%d_%H%M%S"));
+        let timestamp_str = get_timestamp();
+        let log_filename = format!("{}_log_{}.log", config.world_seed, timestamp_str);
         let log_path = Path::new(&log_filename);
         
         match File::create(&log_path) {
             Ok(file) => {
                 let mut writer = BufWriter::new(file);
-                let _ = writeln!(writer, "[{}] 日志文件创建: {}", get_timestamp(), log_path.display());
+                let _ = writeln!(writer, "日志文件创建: {}", log_path.display());
                 Some(Self { writer, enabled: true })
             }
             Err(e) => {
@@ -55,7 +56,7 @@ impl LogWriterInner {
         }
         
         let info_str = info::build_info(config, prep);
-        let _ = writeln!(self.writer, "[{}]\n{}", get_timestamp(), info_str);
+        let _ = writeln!(self.writer, "{}", info_str);
         let _ = self.writer.flush();
     }
 
@@ -64,23 +65,23 @@ impl LogWriterInner {
             return;
         }
 
-        let _ = writeln!(self.writer, "[{}] ==== [Progress] ====", get_timestamp());
+        let _ = writeln!(self.writer, "==== [Progress] ====");
         
         let total_memory_gib = (prep.total_blocks as f64) / (1024.0 * 1024.0 * 1024.0);
-        let _ = writeln!(self.writer, "[{}]   预估内存: {:.4} GiB", get_timestamp(), total_memory_gib);
+        let _ = writeln!(self.writer, "  预估内存: {:.4} GiB", total_memory_gib);
         
         if prep.chunk_count > 1 {
-            let _ = writeln!(self.writer, "[{}]   分块处理: 是", get_timestamp());
-            let _ = writeln!(self.writer, "[{}]   分块数量: {}", get_timestamp(), prep.chunk_count);
+            let _ = writeln!(self.writer, "  分块处理: 是");
+            let _ = writeln!(self.writer, "  分块数量: {}", prep.chunk_count);
             let chunk_rows = prep.chunk_size / prep.x_count;
-            let _ = writeln!(self.writer, "[{}]   每块行数: {}", get_timestamp(), chunk_rows);
+            let _ = writeln!(self.writer, "  每块行数: {}", chunk_rows);
             let chunk_memory_gib = (prep.chunk_size as f64) / (1024.0 * 1024.0 * 1024.0);
-            let _ = writeln!(self.writer, "[{}]   分块内存: {:.4} GiB", get_timestamp(), chunk_memory_gib);
+            let _ = writeln!(self.writer, "  分块内存: {:.4} GiB", chunk_memory_gib);
         } else {
-            let _ = writeln!(self.writer, "[{}]   分块处理: 否", get_timestamp());
+            let _ = writeln!(self.writer, "  分块处理: 否");
         }
         
-        let _ = writeln!(self.writer, "[{}]   开始计算...", get_timestamp());
+        let _ = writeln!(self.writer, "  开始计算...");
         let _ = self.writer.flush();
     }
 
@@ -89,8 +90,8 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格    0%     0s    处理网格    0%     0s", 
-            get_timestamp(), chunk_idx + 1, chunk_count);
+        let _ = writeln!(self.writer, "[{}/{}]       生成网格    0%     0s    处理网格    0%     0s", 
+            chunk_idx + 1, chunk_count);
         let _ = self.writer.flush();
     }
 
@@ -99,8 +100,8 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格   {:.0}%     {}s    处理网格    0%     0s", 
-            get_timestamp(), chunk_idx + 1, chunk_count, percent, elapsed.as_secs());
+        let _ = writeln!(self.writer, "[{}/{}]       生成网格   {:.0}%     {}s    处理网格    0%     0s", 
+            chunk_idx + 1, chunk_count, percent, elapsed.as_secs());
         let _ = self.writer.flush();
     }
 
@@ -109,8 +110,8 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格  100%     {}s    处理网格    0%     0s", 
-            get_timestamp(), chunk_idx + 1, chunk_count, elapsed.as_secs());
+        let _ = writeln!(self.writer, "[{}/{}]       生成网格  100%     {}s    处理网格    0%     0s", 
+            chunk_idx + 1, chunk_count, elapsed.as_secs());
         let _ = self.writer.flush();
     }
 
@@ -119,8 +120,8 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格  100%     {}s    处理网格   {:.0}%     {}s", 
-            get_timestamp(), chunk_idx + 1, chunk_count, grid_elapsed.as_secs(), process_percent, process_elapsed.as_secs());
+        let _ = writeln!(self.writer, "[{}/{}]       生成网格  100%     {}s    处理网格   {:.0}%     {}s", 
+            chunk_idx + 1, chunk_count, grid_elapsed.as_secs(), process_percent, process_elapsed.as_secs());
         let _ = self.writer.flush();
     }
 
@@ -129,8 +130,8 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格  100%     {}s    处理网格  100%     {}s", 
-            get_timestamp(), chunk_idx + 1, chunk_count, grid_elapsed.as_secs(), process_elapsed.as_secs());
+        let _ = writeln!(self.writer, "[{}/{}]       生成网格  100%     {}s    处理网格  100%     {}s", 
+            chunk_idx + 1, chunk_count, grid_elapsed.as_secs(), process_elapsed.as_secs());
         let _ = self.writer.flush();
     }
 
@@ -139,7 +140,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] ====================", get_timestamp());
+        let _ = writeln!(self.writer, "====================");
         let _ = self.writer.flush();
     }
 
@@ -148,7 +149,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] {}", get_timestamp(), message);
+        let _ = writeln!(self.writer, "{}", message);
         let _ = self.writer.flush();
     }
 
@@ -157,7 +158,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [Info] 开始模式匹配...", get_timestamp());
+        let _ = writeln!(self.writer, "[Info] 开始模式匹配...");
         let _ = self.writer.flush();
     }
 
@@ -166,7 +167,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [Info] 匹配完成", get_timestamp());
+        let _ = writeln!(self.writer, "[Info] 匹配完成");
         let _ = self.writer.flush();
     }
 
@@ -175,7 +176,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [Info] 匹配结果已写入 {}", get_timestamp(), path.display());
+        let _ = writeln!(self.writer, "[Info] 匹配结果已写入 {}", path.display());
         let _ = self.writer.flush();
     }
 
@@ -184,7 +185,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [Info] 开始计数...", get_timestamp());
+        let _ = writeln!(self.writer, "[Info] 开始计数...");
         let _ = self.writer.flush();
     }
 
@@ -193,7 +194,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [Info] 计数完成", get_timestamp());
+        let _ = writeln!(self.writer, "[Info] 计数完成");
         let _ = self.writer.flush();
     }
 
@@ -202,7 +203,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [Info] 计数结果已写入 {}", get_timestamp(), path.display());
+        let _ = writeln!(self.writer, "[Info] 计数结果已写入 {}", path.display());
         let _ = self.writer.flush();
     }
 
@@ -211,7 +212,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [Info] 网格文件已写入 {}", get_timestamp(), path.display());
+        let _ = writeln!(self.writer, "[Info] 网格文件已写入 {}", path.display());
         let _ = self.writer.flush();
     }
 
@@ -229,7 +230,6 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}]", get_timestamp());
         let _ = writeln!(self.writer, "==== [Stats] ====");
         let _ = writeln!(self.writer, "预处理耗时: {:?}", prep_time);
         let _ = writeln!(self.writer, "网格生成耗时: {:?}", grid_time);
@@ -254,7 +254,6 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}]", get_timestamp());
         let _ = writeln!(self.writer, "匹配数量: {}", matches.len());
         for m in matches {
             let distance = ((m.distance_sq as f64).sqrt() * 16.0).round() as i64;
@@ -274,7 +273,6 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}]", get_timestamp());
         let _ = writeln!(self.writer, "计数结果数量: {}", results.len());
         for r in results {
             let distance = ((r.distance_sq as f64).sqrt() * 16.0).round() as i64;

@@ -53,9 +53,16 @@ pub fn output_grid_file(config: &Config, prep: &PreprocessedData, grid: &[u8]) -
         .collect();
     let x_header = format!("{}{}\n", " ".repeat(prep.z_col_width), x_header_line);
     
+    let separator = format!("{}{}\n", 
+        " ".repeat(prep.z_col_width), 
+        std::iter::repeat('-').take(prep.x_count * (prep.x_headers[0].len()))
+            .collect::<String>()
+    );
+    
     let mut file = BufWriter::new(File::create(path)?);
     writeln!(file, "{}", header)?;
     write!(file, "{}", x_header)?;
+    write!(file, "{}", separator)?;
     for line in lines {
         write!(file, "{}", line)?;
     }
@@ -99,9 +106,16 @@ pub fn output_grid_chunk(
         .collect();
     let x_header = format!("{}{}\n", " ".repeat(prep.z_col_width), x_header_line);
     
+    let separator = format!("{}{}\n", 
+        " ".repeat(prep.z_col_width), 
+        std::iter::repeat('-').take(prep.x_count * (prep.x_headers[0].len()))
+            .collect::<String>()
+    );
+    
     let mut file = BufWriter::new(File::create(path)?);
     writeln!(file, "{}", header)?;
     write!(file, "{}", x_header)?;
+    write!(file, "{}", separator)?;
     for line in lines {
         write!(file, "{}", line)?;
     }
