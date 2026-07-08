@@ -1,6 +1,5 @@
 use crate::config::{Config, Mode};
 use crate::slime_chunk::{compute_fx, compute_fz};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Pattern {
@@ -78,9 +77,9 @@ fn flatten_pattern(pattern_rows: &[&[u8]]) -> Pattern {
 }
 
 fn generate_challenge_code() -> String {
-    let now = SystemTime::now();
-    let since_epoch = now.duration_since(UNIX_EPOCH).unwrap();
-    let minutes_since_epoch = since_epoch.as_secs() / 60;
+    let now = chrono::Local::now();
+    let timestamp = now.timestamp();
+    let minutes_since_epoch = timestamp / 60;
     let ten_minute_block = minutes_since_epoch / 10;
     format!("{:08x}", ten_minute_block)
 }
@@ -220,8 +219,8 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
         })
         .collect();
     
-    let one_cell = String::from("██").into_bytes();
-    let zero_cell = String::from("░░").into_bytes();
+    let one_cell = String::from("1").into_bytes();
+    let zero_cell = String::from("0").into_bytes();
     
     let memory_limit_bytes = if config.memory_limit_gib > 0.0 {
         Some((config.memory_limit_gib * 1024.0 * 1024.0 * 1024.0) as usize)

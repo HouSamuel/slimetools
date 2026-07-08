@@ -4,11 +4,11 @@ use crate::matcher::MatchResult;
 use crate::counter::CountResult;
 use crate::info;
 use crate::CONFIG;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 fn is_enabled(config: &Config) -> bool {
     config.output_log
@@ -19,19 +19,7 @@ fn is_full(config: &Config) -> bool {
 }
 
 fn get_timestamp() -> String {
-    let now = SystemTime::now();
-    let since_epoch = now.duration_since(SystemTime::UNIX_EPOCH).unwrap();
-    let secs = since_epoch.as_secs();
-    let nanos = since_epoch.subsec_nanos();
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
-        (secs / 31536000 + 1970),
-        ((secs / 86400) % 365 / 30 + 1),
-        (secs / 86400 % 30 + 1),
-        (secs / 3600) % 24,
-        (secs / 60) % 60,
-        secs % 60,
-        nanos / 1_000_000
-    )
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()
 }
 
 pub struct LogWriterInner {
@@ -45,14 +33,8 @@ impl LogWriterInner {
             return None;
         }
         
-        let log_dir = Path::new("logs");
-        if let Err(e) = fs::create_dir_all(log_dir) {
-            eprintln!("[Error] 创建日志目录失败: {}", e);
-            return None;
-        }
-        
-        let log_path = log_dir.join(format!("slime_scan_{}.log", 
-            chrono::Local::now().format("%Y%m%d_%H%M%S")));
+        let log_filename = format!("{}_log_{}.log", config.world_seed, chrono::Local::now().format("%Y%m%d_%H%M%S"));
+        let log_path = Path::new(&log_filename);
         
         match File::create(&log_path) {
             Ok(file) => {
@@ -99,7 +81,6 @@ impl LogWriterInner {
         }
         
         let _ = writeln!(self.writer, "[{}]   开始计算...", get_timestamp());
-        let _ = writeln!(self.writer, "[{}]   进度: 0.0%", get_timestamp());
         let _ = self.writer.flush();
     }
 
@@ -108,7 +89,7 @@ impl LogWriterInner {
             return;
         }
         
-        let _ = writeln!(self.writer, "[{}] [Progress] [{}/{}]     0%       0s", 
+        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格    0%     0s    处理网格    0%     0s", 
             get_timestamp(), chunk_idx + 1, chunk_count);
         let _ = self.writer.flush();
     }
@@ -118,9 +99,8 @@ impl LogWriterInner {
             return;
         }
         
-        let total_percent = ((chunk_idx as f64 + percent / 100.0) / chunk_count as f64) * 100.0;
-        let _ = writeln!(self.writer, "[{}] [Progress] [{}/{}]     {:.1}%       {}s | 总进度: {:.1}%", 
-            get_timestamp(), chunk_idx + 1, chunk_count, percent, elapsed.as_secs(), total_percent);
+        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格   {:.0}%     {}s    处理网格    0%     0s", 
+            get_timestamp(), chunk_idx + 1, chunk_count, percent, elapsed.as_secs());
         let _ = self.writer.flush();
     }
 
@@ -129,9 +109,28 @@ impl LogWriterInner {
             return;
         }
         
-        let total_percent = ((chunk_idx + 1) as f64 / chunk_count as f64) * 100.0;
-        let _ = writeln!(self.writer, "[{}] [Progress] [{}/{}]     100%       {}s | 总进度: {:.1}%", 
-            get_timestamp(), chunk_idx + 1, chunk_count, elapsed.as_secs(), total_percent);
+        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格  100%     {}s    处理网格    0%     0s", 
+            get_timestamp(), chunk_idx + 1, chunk_count, elapsed.as_secs());
+        let _ = self.writer.flush();
+    }
+
+    fn write_process_update(&mut self, chunk_idx: usize, chunk_count: usize, grid_elapsed: Duration, process_percent: f64, process_elapsed: Duration) {
+        if !self.enabled {
+            return;
+        }
+        
+        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格  100%     {}s    处理网格   {:.0}%     {}s", 
+            get_timestamp(), chunk_idx + 1, chunk_count, grid_elapsed.as_secs(), process_percent, process_elapsed.as_secs());
+        let _ = self.writer.flush();
+    }
+
+    fn write_process_finish(&mut self, chunk_idx: usize, chunk_count: usize, grid_elapsed: Duration, process_elapsed: Duration) {
+        if !self.enabled {
+            return;
+        }
+        
+        let _ = writeln!(self.writer, "[{}] [{}/{}]       生成网格  100%     {}s    处理网格  100%     {}s", 
+            get_timestamp(), chunk_idx + 1, chunk_count, grid_elapsed.as_secs(), process_elapsed.as_secs());
         let _ = self.writer.flush();
     }
 
@@ -339,6 +338,22 @@ impl LogWriter {
         if let Ok(mut guard) = self.inner.lock() {
             if let Some(inner) = guard.as_mut() {
                 inner.write_chunk_finish(chunk_idx, chunk_count, elapsed);
+            }
+        }
+    }
+
+    pub fn write_process_update(&mut self, chunk_idx: usize, chunk_count: usize, grid_elapsed: Duration, process_percent: f64, process_elapsed: Duration) {
+        if let Ok(mut guard) = self.inner.lock() {
+            if let Some(inner) = guard.as_mut() {
+                inner.write_process_update(chunk_idx, chunk_count, grid_elapsed, process_percent, process_elapsed);
+            }
+        }
+    }
+
+    pub fn write_process_finish(&mut self, chunk_idx: usize, chunk_count: usize, grid_elapsed: Duration, process_elapsed: Duration) {
+        if let Ok(mut guard) = self.inner.lock() {
+            if let Some(inner) = guard.as_mut() {
+                inner.write_process_finish(chunk_idx, chunk_count, grid_elapsed, process_elapsed);
             }
         }
     }

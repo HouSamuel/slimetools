@@ -6,8 +6,8 @@ pub fn build_info(config: &Config, prep: &PreprocessedData) -> String {
     
     info.push_str("==== [Info] ====\n");
     info.push_str(&format!("种子: {}\n", config.world_seed));
-    info.push_str(&format!("中心区块: ({}, {})\n", prep.center_block_x, prep.center_block_z));
-    info.push_str(&format!("中心世界坐标: x:[{},{}) z:[{},{})\n", 
+    info.push_str(&format!("中心区块: 区块坐标: ({}, {}) - 世界坐标: x:[{},{}) z:[{},{})\n", 
+        prep.center_block_x, prep.center_block_z,
         prep.center_world_x, prep.center_world_x + 16,
         prep.center_world_z, prep.center_world_z + 16));
     info.push_str(&format!("扫描半径: {}\n", config.radius));
@@ -29,6 +29,17 @@ pub fn build_info(config: &Config, prep: &PreprocessedData) -> String {
             info.push_str("模式: Match\n");
             if let Some(p) = &prep.pattern {
                 info.push_str(&format!("匹配模式: {}×{}\n", p.width, p.height));
+                info.push_str("匹配图案:\n");
+                for row in 0..p.height {
+                    info.push_str("  ");
+                    for col in 0..p.width {
+                        if col > 0 {
+                            info.push_str(", ");
+                        }
+                        info.push_str(&p.data[row * p.width + col].to_string());
+                    }
+                    info.push_str("\n");
+                }
                 info.push_str(&format!("匹配目标: {}\n", config.match_target));
             }
         }
@@ -43,42 +54,16 @@ pub fn build_info(config: &Config, prep: &PreprocessedData) -> String {
         }
     }
     
-    let total_memory_gib = (prep.total_blocks as f64) / (1024.0 * 1024.0 * 1024.0);
-    info.push_str(&format!("预估内存: {:.4} GiB\n", total_memory_gib));
-    
     if config.memory_limit_gib > 0.0 {
         info.push_str(&format!("内存限制: {} GiB\n", config.memory_limit_gib));
     } else {
         info.push_str("内存限制: 无限制\n");
     }
     
-    if prep.chunk_count > 1 {
-        info.push_str("分块处理: 是\n");
-        info.push_str(&format!("分块数量: {}\n", prep.chunk_count));
-        info.push_str(&format!("每块行数: {}\n", prep.chunk_size / prep.x_count));
-        let chunk_memory_gib = (prep.chunk_size as f64) / (1024.0 * 1024.0 * 1024.0);
-        info.push_str(&format!("分块内存: {:.4} GiB\n", chunk_memory_gib));
-    } else {
-        info.push_str("分块处理: 否\n");
-    }
-    
-    match config.mode {
-        Mode::Check => {
-            info.push_str(&format!("输出网格文件: {}\n", config.output_map));
-        }
-        Mode::Match => {
-            info.push_str(&format!("输出匹配文件: {}\n", config.output_match));
-            info.push_str(&format!("输出网格文件: {}\n", config.output_map));
-        }
-        Mode::Count => {
-            info.push_str(&format!("输出计数文件: {}\n", config.output_count));
-            info.push_str(&format!("输出网格文件: {}\n", config.output_map));
-        }
-    }
-    
+    info.push_str(&format!("输出匹配文件: {}\n", config.output_match));
+    info.push_str(&format!("输出网格文件: {}\n", config.output_map));
     info.push_str(&format!("输出日志文件: {}\n", config.output_log));
     info.push_str(&format!("终端模式: {:?}\n", config.terminal_mode));
-    info.push_str("================\n");
     
     info
 }

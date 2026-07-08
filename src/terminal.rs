@@ -6,7 +6,7 @@ use crate::info;
 use crate::CONFIG;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn is_enabled() -> bool {
     CONFIG.terminal_mode != TerminalMode::None
@@ -32,6 +32,7 @@ pub struct ProgressDisplay {
     last_grid_percent: f64,
     last_process_percent: f64,
     update_interval: f64,
+    start_time: Instant,
 }
 
 impl ProgressDisplay {
@@ -44,6 +45,7 @@ impl ProgressDisplay {
             last_grid_percent: -1.0,
             last_process_percent: -1.0,
             update_interval,
+            start_time: Instant::now(),
         }
     }
 
@@ -68,6 +70,7 @@ impl ProgressDisplay {
         }
         
         println!("  开始计算...");
+        self.start_time = Instant::now();
     }
 
     pub fn start_chunk(&mut self, chunk_idx: usize) {
@@ -138,6 +141,25 @@ impl ProgressDisplay {
             self.current_chunk + 1, self.chunk_count, self.grid_elapsed.as_secs(), elapsed.as_secs());
         
         io::stdout().flush().unwrap();
+        
+        if self.current_chunk == 0 && self.chunk_count > 1 {
+            let total_elapsed = self.start_time.elapsed();
+            let avg_per_chunk = total_elapsed.as_secs_f64();
+            let remaining_chunks = self.chunk_count - 1;
+            let estimated_remaining = (avg_per_chunk * remaining_chunks as f64) as u64;
+            
+            let hours = estimated_remaining / 3600;
+            let minutes = (estimated_remaining % 3600) / 60;
+            let seconds = estimated_remaining % 60;
+            
+            if hours > 0 {
+                println!("预估剩余时间: {}小时{}分{}秒", hours, minutes, seconds);
+            } else if minutes > 0 {
+                println!("预估剩余时间: {}分{}秒", minutes, seconds);
+            } else {
+                println!("预估剩余时间: {}秒", seconds);
+            }
+        }
     }
 
     pub fn finish_all(&self) {}

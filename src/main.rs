@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -107,7 +109,7 @@ fn process_check_mode(
                     display_clone.lock().unwrap().update_grid(percent, elapsed);
                     log_clone.write_chunk_update(chunk_idx_val, chunk_count_val, percent, elapsed);
                     
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(500));
                 }
             });
             
@@ -152,7 +154,7 @@ fn process_check_mode(
                 display_clone.lock().unwrap().update_grid(percent, elapsed);
                 log_clone.write_chunk_update(0, 1, percent, elapsed);
                 
-                thread::sleep(Duration::from_millis(200));
+                thread::sleep(Duration::from_millis(500));
             }
         });
         
@@ -225,7 +227,7 @@ fn process_match_mode(
                     display_clone.lock().unwrap().update_grid(percent, elapsed);
                     log_clone.write_chunk_update(chunk_idx_val, chunk_count_val, percent, elapsed);
                     
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(500));
                 }
             });
             
@@ -246,6 +248,8 @@ fn process_match_mode(
             let process_progress = Arc::new(AtomicUsize::new(0));
             let process_counter_clone = Arc::clone(&process_progress);
             let process_display_clone = Arc::clone(&progress_display);
+            let mut process_log_clone = log_writer.clone();
+            let grid_elapsed_clone = grid_elapsed;
             
             let process_start = Instant::now();
             let process_handle = thread::spawn(move || {
@@ -255,8 +259,9 @@ fn process_match_mode(
                     let elapsed = process_start.elapsed();
                     
                     process_display_clone.lock().unwrap().update_process(percent, elapsed);
+                    process_log_clone.write_process_update(chunk_idx, chunk_count_val, grid_elapsed_clone, percent, elapsed);
                     
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(500));
                 }
             });
             
@@ -266,7 +271,7 @@ fn process_match_mode(
             
             let process_elapsed = process_start.elapsed();
             progress_display.lock().unwrap().finish_process(process_elapsed);
-            log_writer.write_log(&format!("[{}] 块 [{}/{}] 匹配完成，耗时 {}s", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), chunk_idx + 1, chunk_count_val, process_elapsed.as_secs()));
+            log_writer.write_process_finish(chunk_idx, chunk_count_val, grid_elapsed, process_elapsed);
             
             all_matches.extend(chunk_matches);
             
@@ -301,7 +306,7 @@ fn process_match_mode(
                 display_clone.lock().unwrap().update_grid(percent, elapsed);
                 log_clone.write_chunk_update(0, 1, percent, elapsed);
                 
-                thread::sleep(Duration::from_millis(200));
+                thread::sleep(Duration::from_millis(500));
             }
         });
         
@@ -365,7 +370,7 @@ fn process_count_mode(
     progress_display.lock().unwrap().print_header(prep);
     log_writer.write_progress_header(config, prep);
     
-    let mut all_results = Vec::new();
+    let mut all_results: BinaryHeap<Reverse<counter::CountResult>> = BinaryHeap::new();
     let mut all_slime_count = 0;
     
     if prep.chunk_count > 1 {
@@ -395,7 +400,7 @@ fn process_count_mode(
                     display_clone.lock().unwrap().update_grid(percent, elapsed);
                     log_clone.write_chunk_update(chunk_idx_val, chunk_count_val, percent, elapsed);
                     
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(500));
                 }
             });
             
@@ -409,13 +414,18 @@ fn process_count_mode(
             
             all_slime_count += chunk.iter().filter(|&&x| x == 1).count();
             
-            let start_block_z = prep.min_block_z + z_start as i32;
-            let end_block_z = prep.min_block_z + z_end as i32 - 1;
-            let process_total = ((end_block_z - start_block_z + 1) as usize) * ((prep.max_block_x - prep.min_block_x + 1) as usize);
+            let half_size = config.count_size / 2;
+            let chunk_start_block_z = prep.min_block_z + z_start as i32;
+            let chunk_end_block_z = prep.min_block_z + z_end as i32 - 1;
+            let valid_start_z = std::cmp::max(chunk_start_block_z + half_size, prep.min_block_z);
+            let valid_end_z = std::cmp::min(chunk_end_block_z - half_size, prep.max_block_z);
+            let process_total = ((valid_end_z - valid_start_z + 1) as usize) * prep.x_count;
             
             let process_progress = Arc::new(AtomicUsize::new(0));
             let process_counter_clone = Arc::clone(&process_progress);
             let process_display_clone = Arc::clone(&progress_display);
+            let mut process_log_clone = log_writer.clone();
+            let grid_elapsed_clone = grid_elapsed;
             
             let process_start = Instant::now();
             let process_handle = thread::spawn(move || {
@@ -425,20 +435,31 @@ fn process_count_mode(
                     let elapsed = process_start.elapsed();
                     
                     process_display_clone.lock().unwrap().update_process(percent, elapsed);
+                    process_log_clone.write_process_update(chunk_idx, chunk_count_val, grid_elapsed_clone, percent, elapsed);
                     
-                    thread::sleep(Duration::from_millis(200));
+                    thread::sleep(Duration::from_millis(500));
                 }
             });
             
-            let chunk_results = counter::count_slime_chunks_chunk_with_progress(prep, &chunk, z_start, z_end, config.count_shape, config.count_size, &process_progress);
+            let chunk_results = counter::count_slime_chunks_chunk_with_progress(prep, &chunk, z_start, z_end, config.count_shape, config.count_size, config.count_target, &process_progress);
             
             process_handle.join().unwrap();
             
             let process_elapsed = process_start.elapsed();
             progress_display.lock().unwrap().finish_process(process_elapsed);
-            log_writer.write_log(&format!("[{}] 块 [{}/{}] 计数完成，耗时 {}s", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), chunk_idx + 1, chunk_count_val, process_elapsed.as_secs()));
+            log_writer.write_process_finish(chunk_idx, chunk_count_val, grid_elapsed, process_elapsed);
             
-            all_results.extend(chunk_results);
+            for result in chunk_results {
+                if all_results.len() < config.count_target {
+                    all_results.push(Reverse(result));
+                } else if let Some(Reverse(top)) = all_results.peek() {
+                    if result.slime_count > top.slime_count || 
+                       (result.slime_count == top.slime_count && result.distance_sq < top.distance_sq) {
+                        all_results.pop();
+                        all_results.push(Reverse(result));
+                    }
+                }
+            }
         }
         
         progress_display.lock().unwrap().finish_all();
@@ -463,7 +484,7 @@ fn process_count_mode(
                 display_clone.lock().unwrap().update_grid(percent, elapsed);
                 log_clone.write_chunk_update(0, 1, percent, elapsed);
                 
-                thread::sleep(Duration::from_millis(200));
+                thread::sleep(Duration::from_millis(500));
             }
         });
         
@@ -478,8 +499,12 @@ fn process_count_mode(
         all_slime_count = grid.iter().filter(|&&x| x == 1).count();
         
         let process_start = Instant::now();
-        all_results = counter::count_slime_chunks(prep, &grid, config.count_shape, config.count_size, config.count_target);
+        let results = counter::count_slime_chunks(prep, &grid, config.count_shape, config.count_size, config.count_target);
         let process_elapsed = process_start.elapsed();
+        
+        for result in results {
+            all_results.push(Reverse(result));
+        }
         
         progress_display.lock().unwrap().finish_process(process_elapsed);
         progress_display.lock().unwrap().finish_all();
@@ -493,12 +518,11 @@ fn process_count_mode(
     
     *total_slime_count = all_slime_count;
     
+    let mut all_results: Vec<counter::CountResult> = all_results.into_iter().map(|Reverse(r)| r).collect();
     all_results.sort_by(|a, b| {
         b.slime_count.cmp(&a.slime_count)
             .then_with(|| a.distance_sq.cmp(&b.distance_sq))
     });
-    
-    all_results.truncate(config.count_target);
     
     if config.output_count {
         let count_path = count_output::output_count_file(config, prep, &all_results)?;
