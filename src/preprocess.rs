@@ -210,7 +210,7 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
     let z_headers: Vec<Vec<u8>> = (min_block_z..=max_block_z)
         .rev()
         .map(|z| {
-            let s = format!("{:>width$}|", z, width = z_col_width);
+            let s = format!("{:>width$} | ", z, width = z_col_width);
             s.into_bytes()
         })
         .collect();
@@ -227,10 +227,8 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
         })
         .collect();
     
-    let mut zero_cell = vec![b' '; cell_width];
-    zero_cell[0] = b'0';
-    let mut one_cell = vec![b' '; cell_width];
-    one_cell[0] = b'1';
+    let zero_cell = format!("{:>width$} ", 0, width = x_header_width).into_bytes();
+    let one_cell = format!("{:>width$} ", 1, width = x_header_width).into_bytes();
     
     let memory_limit_bytes = if config.memory_limit_gib > 0.0 {
         Some((config.memory_limit_gib * 1024.0 * 1024.0 * 1024.0) as usize)

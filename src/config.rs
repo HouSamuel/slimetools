@@ -107,7 +107,7 @@ pub const CONFIG: Config = Config {
     world_seed: 20260627,
     center_block_x: 0,
     center_block_z: 0,
-    radius: 5,
+    radius: 100,
     mode: Mode::Check,
     memory_limit_gib: 4.0,
     

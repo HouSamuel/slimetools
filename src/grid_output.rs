@@ -34,9 +34,10 @@ pub fn output_grid_file(config: &Config, prep: &PreprocessedData, grid: &[u8]) -
         .into_par_iter()
         .map(|z_idx| {
             let z_header = String::from_utf8_lossy(&prep.z_headers[z_idx]);
+            let data_idx = prep.z_count - 1 - z_idx;
             let cells: String = (0..prep.x_count)
                 .map(|x_idx| {
-                    let val = grid[z_idx * prep.x_count + x_idx];
+                    let val = grid[data_idx * prep.x_count + x_idx];
                     if val == 1 {
                         String::from_utf8_lossy(&prep.one_cell)
                     } else {
@@ -51,10 +52,11 @@ pub fn output_grid_file(config: &Config, prep: &PreprocessedData, grid: &[u8]) -
     let x_header_line: String = prep.x_headers.iter()
         .map(|h| String::from_utf8_lossy(h))
         .collect();
-    let x_header = format!("{}{}\n", " ".repeat(prep.z_col_width), x_header_line);
+    let z_header_width = prep.z_headers[0].len();
+    let x_header = format!("{}{}\n", " ".repeat(z_header_width), x_header_line);
     
     let separator = format!("{}{}\n", 
-        " ".repeat(prep.z_col_width), 
+        " ".repeat(z_header_width), 
         std::iter::repeat('-').take(prep.x_count * (prep.x_headers[0].len()))
             .collect::<String>()
     );
@@ -104,10 +106,11 @@ pub fn output_grid_chunk(
     let x_header_line: String = prep.x_headers.iter()
         .map(|h| String::from_utf8_lossy(h))
         .collect();
-    let x_header = format!("{}{}\n", " ".repeat(prep.z_col_width), x_header_line);
+    let z_header_width = prep.z_headers[0].len();
+    let x_header = format!("{}{}\n", " ".repeat(z_header_width), x_header_line);
     
     let separator = format!("{}{}\n", 
-        " ".repeat(prep.z_col_width), 
+        " ".repeat(z_header_width), 
         std::iter::repeat('-').take(prep.x_count * (prep.x_headers[0].len()))
             .collect::<String>()
     );
