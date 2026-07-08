@@ -84,8 +84,9 @@ pub struct Config {
 /// 0 = 任意区块，1 = 必须是史莱姆区块，2 = 必须不是史莱姆区块
 /// 仅在 Match 模式下生效，修改后无需手动更新长宽，自动推导
 const PATTERN_ROWS: &[&[u8]] = &[
-    &[1, 1],
-    &[1, 1],
+    &[1, 1, 1],
+    &[1, 1, 1],
+    &[1, 1, 1],
 ];
 
 /// 全局配置实例
@@ -95,7 +96,7 @@ pub const CONFIG: Config = Config {
     world_seed: 20260627,
     center_block_x: 0,
     center_block_z: 0,
-    radius: 10000,
+    radius: 100000,
     mode: Mode::Match,
     memory_limit_gib: None,
     
