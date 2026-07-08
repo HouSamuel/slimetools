@@ -4,26 +4,24 @@
 const WORLD_SEED: i128 = 20260627;
 const CENTER_X: i32 = 0;
 const CENTER_Z: i32 = 0;
-const RADIUS: i32 = 1000000;
+const RADIUS: i32 = 100;
 
 /// 匹配模式矩阵（二维，行优先）
 /// 0 = 任意（不检查）
 /// 1 = 必须为史莱姆区块
 /// 2 = 必须为非史莱姆区块
-const PATTERN: [[u8; 4]; 4] = [
-    [1, 1, 1, 1],
-    [1, 1, 1, 1],
-    [1, 1, 1, 1],
-    [1, 1, 1, 1],
+const PATTERN: [[u8; 2]; 2] = [
+    [1, 1],
+    [1, 1],
 ];
-const PATTERN_WIDTH: usize = 4;
-const PATTERN_HEIGHT: usize = 4;
+const PATTERN_WIDTH: usize = 2;
+const PATTERN_HEIGHT: usize = 2;
 
 /// 匹配目标：0 = 找出所有匹配，1 = 找到一个即停止，2 = 找到两个即停止
 const MATCH_TARGET: usize = 0;
 
 /// 是否输出完整种子文件（0/1 矩阵）：true = 输出，false = 不输出
-const OUTPUT_SEED_FILE: bool = false;
+const OUTPUT_SEED_FILE: bool = true;
 
 // MC史莱姆区块公式固定系数
 const C_X2: i64 = 4987142;
