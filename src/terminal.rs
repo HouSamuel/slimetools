@@ -3,7 +3,7 @@ use crate::preprocess::PreprocessedData;
 use crate::matcher::MatchResult;
 use crate::counter::CountResult;
 use std::time::Duration;
-use std::io::{self, Write};
+
 
 pub fn print_info(config: &Config, prep: &PreprocessedData) {
     if !config.terminal_output {
@@ -73,19 +73,6 @@ pub fn print_chunking_info(config: &Config, prep: &PreprocessedData) {
     } else {
         println!("分块处理: 否");
     }
-}
-
-pub fn print_progress(config: &Config, chunk_index: usize, total_chunks: usize, percentage: f64) {
-    if !config.terminal_output {
-        return;
-    }
-    
-    if total_chunks > 1 {
-        print!("\r分块 [{}/{}] {:.1}%", chunk_index, total_chunks, percentage);
-    } else {
-        print!("\r处理进度: {:.1}%", percentage);
-    }
-    io::stdout().flush().unwrap();
 }
 
 pub fn print_grid_start(config: &Config) {
@@ -180,18 +167,15 @@ pub fn print_match_summary(config: &Config, matches: &[MatchResult]) {
     }
     
     println!("匹配数量: {}", matches.len());
-    if !matches.is_empty() {
-        println!("前10个匹配:");
-        for m in matches.iter().take(10) {
-            let distance = ((m.distance_sq as f64).sqrt() * 16.0).round() as i64;
-            println!(
-                "  区块: ({}, {}) | 世界坐标: x:[{},{}) z:[{},{}) | 距离: {}m",
-                m.block_x, m.block_z,
-                m.world_x, m.world_x + 16,
-                m.world_z, m.world_z + 16,
-                distance
-            );
-        }
+    for m in matches {
+        let distance = ((m.distance_sq as f64).sqrt() * 16.0).round() as i64;
+        println!(
+            "  区块: ({}, {}) | 世界坐标: x:[{},{}) z:[{},{}) | 距离: {}m",
+            m.block_x, m.block_z,
+            m.world_x, m.world_x + 16,
+            m.world_z, m.world_z + 16,
+            distance
+        );
     }
 }
 
@@ -201,17 +185,14 @@ pub fn print_count_summary(config: &Config, results: &[CountResult]) {
     }
     
     println!("计数结果数量: {}", results.len());
-    if !results.is_empty() {
-        println!("前10个结果:");
-        for r in results.iter().take(10) {
-            let distance = ((r.distance_sq as f64).sqrt() * 16.0).round() as i64;
-            println!(
-                "  中心: ({}, {}) | 世界坐标: x:[{},{}) z:[{},{}) | 史莱姆数: {} | 距离: {}m",
-                r.block_x, r.block_z,
-                r.world_x, r.world_x + 16,
-                r.world_z, r.world_z + 16,
-                r.slime_count, distance
-            );
-        }
+    for r in results {
+        let distance = ((r.distance_sq as f64).sqrt() * 16.0).round() as i64;
+        println!(
+            "  中心: ({}, {}) | 世界坐标: x:[{},{}) z:[{},{}) | 史莱姆数: {} | 距离: {}m",
+            r.block_x, r.block_z,
+            r.world_x, r.world_x + 16,
+            r.world_z, r.world_z + 16,
+            r.slime_count, distance
+        );
     }
 }

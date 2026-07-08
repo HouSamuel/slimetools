@@ -8,16 +8,8 @@ pub struct Pattern {
     pub height: usize,
 }
 
-impl Pattern {
-    pub const fn new(data: &'static [u8], width: usize, height: usize) -> Self {
-        Pattern { data, width, height }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PreprocessedData {
-    pub world_seed: i64,
-    
     pub center_block_x: i32,
     pub center_block_z: i32,
     pub center_world_x: i32,
@@ -27,11 +19,6 @@ pub struct PreprocessedData {
     pub max_block_x: i32,
     pub min_block_z: i32,
     pub max_block_z: i32,
-    
-    pub min_world_x: i32,
-    pub max_world_x: i32,
-    pub min_world_z: i32,
-    pub max_world_z: i32,
     
     pub top_left_block: (i32, i32),
     pub bottom_right_block: (i32, i32),
@@ -52,7 +39,6 @@ pub struct PreprocessedData {
     pub one_cell: Vec<u8>,
     pub zero_cell: Vec<u8>,
     
-    pub memory_limit_bytes: Option<usize>,
     pub chunk_count: usize,
     pub chunk_size: usize,
     
@@ -146,8 +132,6 @@ fn validate(config: &Config) -> Result<(), String> {
 pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
     validate(config)?;
     
-    let world_seed = config.world_seed as i64;
-    
     let min_block_x = config.center_block_x - config.radius;
     let max_block_x = config.center_block_x + config.radius;
     let min_block_z = config.center_block_z - config.radius;
@@ -160,15 +144,10 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
     let center_world_x = config.center_block_x * 16;
     let center_world_z = config.center_block_z * 16;
     
-    let min_world_x = min_block_x * 16;
-    let max_world_x = max_block_x * 16 + 15;
-    let min_world_z = min_block_z * 16;
-    let max_world_z = max_block_z * 16 + 15;
-    
     let top_left_block = (min_block_x, max_block_z);
     let bottom_right_block = (max_block_x, min_block_z);
-    let top_left_world = (min_world_x, max_world_z);
-    let bottom_right_world = (max_world_x, min_world_z);
+    let top_left_world = (min_block_x * 16, max_block_z * 16 + 15);
+    let bottom_right_world = (max_block_x * 16 + 15, min_block_z * 16);
     
     let fx_arr: Vec<i64> = (min_block_x..=max_block_x)
         .map(|x| compute_fx(x))
@@ -205,14 +184,11 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
     let one_cell = String::from("██").into_bytes();
     let zero_cell = String::from("░░").into_bytes();
     
-    let memory_limit_bytes = config.memory_limit_gib.map(|gib| (gib * 1024.0 * 1024.0 * 1024.0) as usize);
-    
-    let (chunk_count, chunk_size) = calculate_chunking(total_blocks, memory_limit_bytes);
+    let (chunk_count, chunk_size) = calculate_chunking(total_blocks, config.memory_limit_gib.map(|gib| (gib * 1024.0 * 1024.0 * 1024.0) as usize));
     
     let pattern = config.pattern.map(flatten_pattern);
     
     Ok(PreprocessedData {
-        world_seed,
         center_block_x: config.center_block_x,
         center_block_z: config.center_block_z,
         center_world_x,
@@ -221,10 +197,6 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
         max_block_x,
         min_block_z,
         max_block_z,
-        min_world_x,
-        max_world_x,
-        min_world_z,
-        max_world_z,
         top_left_block,
         bottom_right_block,
         top_left_world,
@@ -239,7 +211,6 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
         z_col_width,
         one_cell,
         zero_cell,
-        memory_limit_bytes,
         chunk_count,
         chunk_size,
         pattern,
@@ -369,10 +340,10 @@ mod tests {
         
         let prep = preprocess(&config).unwrap();
         
-        assert_eq!(prep.min_world_x, 16);
-        assert_eq!(prep.max_world_x, 63);
-        assert_eq!(prep.min_world_z, 32);
-        assert_eq!(prep.max_world_z, 79);
+        assert_eq!(prep.top_left_world.0, 16);
+        assert_eq!(prep.bottom_right_world.0, 63);
+        assert_eq!(prep.bottom_right_world.1, 32);
+        assert_eq!(prep.top_left_world.1, 79);
     }
 
     #[test]

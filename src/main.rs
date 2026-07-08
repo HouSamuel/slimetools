@@ -9,7 +9,6 @@ mod counter;
 mod grid_output;
 mod match_output;
 mod count_output;
-mod stats;
 mod terminal;
 mod log;
 

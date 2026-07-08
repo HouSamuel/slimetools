@@ -63,14 +63,6 @@ pub fn is_slime_chunk_fast(rng: &mut FastRandom, fx: i64, fz: i64, seed: i64) ->
     rng.next_int_mod(BOUND) == TARGET
 }
 
-#[inline(always)]
-pub fn is_slime_chunk(x: i32, z: i32, seed: i64) -> bool {
-    let mut rng = FastRandom::new();
-    let fx = compute_fx(x);
-    let fz = compute_fz(z);
-    is_slime_chunk_fast(&mut rng, fx, fz, seed)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -88,7 +80,11 @@ mod tests {
     #[test]
     fn test_is_slime_chunk_consistency() {
         let seed = 20260627i64;
-        assert_eq!(is_slime_chunk(0, 0, seed), is_slime_chunk(0, 0, seed));
+        let fx = compute_fx(0);
+        let fz = compute_fz(0);
+        let mut rng1 = FastRandom::new();
+        let mut rng2 = FastRandom::new();
+        assert_eq!(is_slime_chunk_fast(&mut rng1, fx, fz, seed), is_slime_chunk_fast(&mut rng2, fx, fz, seed));
     }
 
     #[test]
@@ -97,6 +93,6 @@ mod tests {
         let fx = compute_fx(100);
         let fz = compute_fz(200);
         let mut rng = FastRandom::new();
-        assert_eq!(is_slime_chunk_fast(&mut rng, fx, fz, seed), is_slime_chunk(100, 200, seed));
+        is_slime_chunk_fast(&mut rng, fx, fz, seed);
     }
 }

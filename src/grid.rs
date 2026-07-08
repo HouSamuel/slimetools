@@ -26,34 +26,6 @@ pub fn generate_grid(config: &Config, prep: &PreprocessedData) -> Vec<u8> {
         .collect()
 }
 
-pub fn generate_grid_chunk(
-    config: &Config,
-    prep: &PreprocessedData,
-    start_z: usize,
-    end_z: usize,
-) -> Vec<u8> {
-    let seed = config.world_seed as i64;
-    
-    (start_z..end_z)
-        .into_par_iter()
-        .flat_map(|z_idx| {
-            let fz = prep.fz_arr[z_idx];
-            let mut rng = FastRandom::new();
-            
-            (0..prep.x_count)
-                .map(move |x_idx| {
-                    let fx = prep.fx_arr[x_idx];
-                    if is_slime_chunk_fast(&mut rng, fx, fz, seed) {
-                        1u8
-                    } else {
-                        0u8
-                    }
-                })
-                .collect::<Vec<u8>>()
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

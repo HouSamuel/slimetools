@@ -24,15 +24,6 @@ impl LogWriter {
         Ok(LogWriter { file: Some(file), enabled: true })
     }
     
-    pub fn write(&mut self, message: &str) -> std::io::Result<()> {
-        if !self.enabled {
-            return Ok(());
-        }
-        
-        let file = self.file.as_mut().unwrap();
-        writeln!(file, "[{}] {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), message)
-    }
-    
     pub fn write_info(&mut self, config: &Config, prep: &PreprocessedData) -> std::io::Result<()> {
         if !self.enabled {
             return Ok(());
