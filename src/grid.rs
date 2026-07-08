@@ -1,29 +1,24 @@
 use rayon::prelude::*;
 use crate::config::Config;
 use crate::preprocess::PreprocessedData;
-use crate::slime_chunk::{FastRandom, is_slime_chunk_fast};
+use crate::slime_chunk::is_slime_chunk_fast;
 
 pub fn generate_grid(config: &Config, prep: &PreprocessedData) -> Vec<u8> {
     let seed = config.world_seed as i64;
+    let x_count = prep.x_count;
     
-    (0..prep.z_count)
-        .into_par_iter()
-        .flat_map(|z_idx| {
-            let fz = prep.fz_arr[z_idx];
-            let mut rng = FastRandom::new();
-            
-            (0..prep.x_count)
-                .map(move |x_idx| {
-                    let fx = prep.fx_arr[x_idx];
-                    if is_slime_chunk_fast(&mut rng, fx, fz, seed) {
-                        1u8
-                    } else {
-                        0u8
-                    }
-                })
-                .collect::<Vec<u8>>()
-        })
-        .collect()
+    let mut grid = vec![0u8; prep.total_blocks];
+    
+    grid.par_chunks_mut(x_count).enumerate().for_each(|(z_idx, row)| {
+        let fz = prep.fz_arr[z_idx];
+        
+        for (x_idx, cell) in row.iter_mut().enumerate() {
+            let fx = prep.fx_arr[x_idx];
+            *cell = is_slime_chunk_fast(fx, fz, seed) as u8;
+        }
+    });
+    
+    grid
 }
 
 #[cfg(test)]

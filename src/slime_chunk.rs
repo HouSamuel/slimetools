@@ -2,65 +2,32 @@ const C_X2: i64 = 4987142;
 const C_X1: i64 = 5947611;
 const C_Z2: i64 = 4392871;
 const C_Z1: i64 = 389711;
-const XOR_MASK: i64 = 987234911;
-const BOUND: i32 = 10;
-const TARGET: i32 = 0;
+const BOUND: i64 = 10;
+const TARGET: i64 = 0;
 
 const LCG_MULT: u64 = 0x5DEECE66D;
 const LCG_ADD: u64 = 0xB;
 const LCG_MASK: u64 = (1 << 48) - 1;
 const XOR_SEED: u64 = 0x5DEECE66D;
 
-#[derive(Debug, Clone, Copy)]
-#[repr(transparent)]
-pub struct FastRandom {
-    seed: u64,
-}
-
-impl FastRandom {
-    #[inline(always)]
-    pub fn new() -> Self {
-        FastRandom { seed: 0 }
-    }
-
-    #[inline(always)]
-    pub fn set_seed(&mut self, seed: i64) {
-        self.seed = ((seed as u64) ^ XOR_SEED) & LCG_MASK;
-    }
-
-    #[inline(always)]
-    pub fn next31(&mut self) -> u32 {
-        self.seed = self.seed
-            .wrapping_mul(LCG_MULT)
-            .wrapping_add(LCG_ADD)
-            & LCG_MASK;
-        (self.seed >> 17) as u32
-    }
-
-    #[inline(always)]
-    pub fn next_int_mod(&mut self, bound: i32) -> i32 {
-        let bits = self.next31() as i64;
-        (bits % bound as i64) as i32
-    }
-}
-
 #[inline(always)]
 pub fn compute_fx(x: i32) -> i64 {
     let xi = x as i64;
-    xi.wrapping_mul(xi) * C_X2 + xi * C_X1
+    xi.wrapping_mul(xi).wrapping_mul(C_X2).wrapping_add(xi.wrapping_mul(C_X1))
 }
 
 #[inline(always)]
 pub fn compute_fz(z: i32) -> i64 {
     let zi = z as i64;
-    zi.wrapping_mul(zi) * C_Z2 + zi * C_Z1
+    zi.wrapping_mul(zi).wrapping_mul(C_Z2).wrapping_add(zi.wrapping_mul(C_Z1))
 }
 
 #[inline(always)]
-pub fn is_slime_chunk_fast(rng: &mut FastRandom, fx: i64, fz: i64, seed: i64) -> bool {
-    let combined = (seed as u64).wrapping_add(fx as u64).wrapping_add(fz as u64) as i64;
-    rng.set_seed(combined ^ XOR_MASK);
-    rng.next_int_mod(BOUND) == TARGET
+pub fn is_slime_chunk_fast(fx: i64, fz: i64, seed: i64) -> bool {
+    let combined = ((seed as u64).wrapping_add(fx as u64).wrapping_add(fz as u64) ^ XOR_SEED) & LCG_MASK;
+    let next_seed = combined.wrapping_mul(LCG_MULT).wrapping_add(LCG_ADD) & LCG_MASK;
+    let bits = (next_seed >> 17) as i64;
+    (bits % BOUND) == TARGET
 }
 
 #[cfg(test)]
@@ -82,17 +49,14 @@ mod tests {
         let seed = 20260627i64;
         let fx = compute_fx(0);
         let fz = compute_fz(0);
-        let mut rng1 = FastRandom::new();
-        let mut rng2 = FastRandom::new();
-        assert_eq!(is_slime_chunk_fast(&mut rng1, fx, fz, seed), is_slime_chunk_fast(&mut rng2, fx, fz, seed));
+        assert_eq!(is_slime_chunk_fast(fx, fz, seed), is_slime_chunk_fast(fx, fz, seed));
     }
 
     #[test]
-    fn test_is_slime_chunk_fast_equivalence() {
+    fn test_is_slime_chunk_fast_values() {
         let seed = 20260627i64;
         let fx = compute_fx(100);
         let fz = compute_fz(200);
-        let mut rng = FastRandom::new();
-        is_slime_chunk_fast(&mut rng, fx, fz, seed);
+        is_slime_chunk_fast(fx, fz, seed);
     }
 }
