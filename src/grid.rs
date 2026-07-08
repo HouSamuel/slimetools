@@ -3,20 +3,34 @@ use crate::config::Config;
 use crate::preprocess::PreprocessedData;
 use crate::slime_chunk::is_slime_chunk_fast;
 
+const PARALLEL_THRESHOLD: usize = 10000;
+
 pub fn generate_grid(config: &Config, prep: &PreprocessedData) -> Vec<u8> {
     let seed = config.world_seed as i64;
     let x_count = prep.x_count;
     
     let mut grid = vec![0u8; prep.total_blocks];
     
-    grid.par_chunks_mut(x_count).enumerate().for_each(|(z_idx, row)| {
-        let fz = prep.fz_arr[z_idx];
-        
-        for (x_idx, cell) in row.iter_mut().enumerate() {
-            let fx = prep.fx_arr[x_idx];
-            *cell = is_slime_chunk_fast(fx, fz, seed) as u8;
+    if prep.total_blocks < PARALLEL_THRESHOLD {
+        for z_idx in 0..prep.z_count {
+            let fz = unsafe { *prep.fz_arr.get_unchecked(z_idx) };
+            let row_start = z_idx * x_count;
+            
+            for x_idx in 0..x_count {
+                let fx = unsafe { *prep.fx_arr.get_unchecked(x_idx) };
+                unsafe { *grid.get_unchecked_mut(row_start + x_idx) = is_slime_chunk_fast(fx, fz, seed) as u8 };
+            }
         }
-    });
+    } else {
+        grid.par_chunks_mut(x_count).enumerate().for_each(|(z_idx, row)| {
+            let fz = unsafe { *prep.fz_arr.get_unchecked(z_idx) };
+            
+            for (x_idx, cell) in row.iter_mut().enumerate() {
+                let fx = unsafe { *prep.fx_arr.get_unchecked(x_idx) };
+                *cell = is_slime_chunk_fast(fx, fz, seed) as u8;
+            }
+        });
+    }
     
     grid
 }
