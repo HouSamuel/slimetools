@@ -24,33 +24,39 @@ fn main() -> std::io::Result<()> {
     let prep = preprocess::preprocess(config).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     let prep_time = prep_start.elapsed();
     
+    let grid_start = Instant::now();
+    let grid = grid::generate_grid(config, &prep);
+    let slime_count = grid.iter().filter(|&&x| x == 1).count();
+    let grid_time = grid_start.elapsed();
+    
     print_info(config, &prep);
     print_chunking_info(config, &prep);
     
     let mut log_writer = log::LogWriter::new(config)?;
     log_writer.write_info(config, &prep)?;
     
-    let grid_start = Instant::now();
-    
     print_grid_start(config);
-    
-    let grid = grid::generate_grid(config, &prep);
-    let grid_time = grid_start.elapsed();
-    
     print_grid_done(config);
-    
-    let slime_count = grid.iter().filter(|&&x| x == 1).count();
     
     let process_start = Instant::now();
     
-    let output_start = Instant::now();
-    
     match config.mode {
         config::Mode::Check => {
+            let process_time = process_start.elapsed();
+            
+            let output_start = Instant::now();
+            
             if config.output_map {
                 let path = grid_output::output_grid_file(config, &prep, &grid)?;
                 print_grid_file_written(config, &path);
             }
+            
+            let output_time = output_start.elapsed();
+            let total_time = total_start.elapsed();
+            
+            print_stats(config, prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks);
+            log_writer.write_stats(prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks)?;
+            log_writer.flush()?;
         }
         
         config::Mode::Match => {
@@ -59,6 +65,10 @@ fn main() -> std::io::Result<()> {
             let matches = matcher::find_matches(config, &prep, &grid);
             
             print_match_done(config);
+            
+            let process_time = process_start.elapsed();
+            
+            let output_start = Instant::now();
             
             if config.output_match {
                 let match_path = match_output::output_match_file(config, &prep, &matches)?;
@@ -71,6 +81,13 @@ fn main() -> std::io::Result<()> {
                 let grid_path = grid_output::output_grid_file(config, &prep, &grid)?;
                 print_grid_file_written(config, &grid_path);
             }
+            
+            let output_time = output_start.elapsed();
+            let total_time = total_start.elapsed();
+            
+            print_stats(config, prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks);
+            log_writer.write_stats(prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks)?;
+            log_writer.flush()?;
         }
         
         config::Mode::Count => {
@@ -79,6 +96,10 @@ fn main() -> std::io::Result<()> {
             let results = counter::count_slime_chunks(&prep, &grid, config.count_shape, config.count_size, config.count_target);
             
             print_count_done(config);
+            
+            let process_time = process_start.elapsed();
+            
+            let output_start = Instant::now();
             
             if config.output_count {
                 let count_path = count_output::output_count_file(config, &prep, &results)?;
@@ -91,17 +112,15 @@ fn main() -> std::io::Result<()> {
                 let grid_path = grid_output::output_grid_file(config, &prep, &grid)?;
                 print_grid_file_written(config, &grid_path);
             }
+            
+            let output_time = output_start.elapsed();
+            let total_time = total_start.elapsed();
+            
+            print_stats(config, prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks);
+            log_writer.write_stats(prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks)?;
+            log_writer.flush()?;
         }
     }
-    
-    let output_time = output_start.elapsed();
-    let process_time = process_start.elapsed();
-    let total_time = total_start.elapsed();
-    
-    print_stats(config, prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks);
-    
-    log_writer.write_stats(prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks)?;
-    log_writer.flush()?;
     
     Ok(())
 }

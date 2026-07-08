@@ -60,9 +60,20 @@ pub fn print_info(config: &Config, prep: &PreprocessedData) {
         println!("内存限制: {} GiB", limit);
     }
     
-    println!("输出网格文件: {}", config.output_map);
-    println!("输出匹配文件: {}", config.output_match);
-    println!("输出计数文件: {}", config.output_count);
+    match config.mode {
+        Mode::Check => {
+            println!("输出网格文件: {}", config.output_map);
+        }
+        Mode::Match => {
+            println!("输出匹配文件: {}", config.output_match);
+            println!("输出网格文件: {}", config.output_map);
+        }
+        Mode::Count => {
+            println!("输出计数文件: {}", config.output_count);
+            println!("输出网格文件: {}", config.output_map);
+        }
+    }
+    
     println!("输出日志文件: {}", config.output_log);
     println!("终端模式: {:?}", config.terminal_mode);
     println!("================");
