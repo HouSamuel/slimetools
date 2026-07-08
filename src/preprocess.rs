@@ -239,7 +239,7 @@ fn calculate_chunking(total_blocks: usize, memory_limit_bytes: Option<usize>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, Mode};
+    use crate::config::{Config, Mode, TerminalMode};
 
     #[test]
     fn test_num_width() {
@@ -270,7 +270,7 @@ mod tests {
             output_match: false,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = preprocess(&config).unwrap();
@@ -304,7 +304,7 @@ mod tests {
             output_match: false,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = preprocess(&config).unwrap();
@@ -335,7 +335,7 @@ mod tests {
             output_match: false,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = preprocess(&config).unwrap();
@@ -374,7 +374,7 @@ mod tests {
             output_match: true,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         assert!(validate(&config).is_ok());
@@ -398,7 +398,7 @@ mod tests {
             output_match: true,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         assert!(validate(&config).is_err());

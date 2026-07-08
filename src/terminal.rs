@@ -1,12 +1,19 @@
-use crate::config::{Config, Mode, CountShape};
+use crate::config::{Config, Mode, CountShape, TerminalMode};
 use crate::preprocess::PreprocessedData;
 use crate::matcher::MatchResult;
 use crate::counter::CountResult;
 use std::time::Duration;
 
+fn is_enabled(config: &Config) -> bool {
+    config.terminal_mode != TerminalMode::None
+}
+
+fn is_full(config: &Config) -> bool {
+    config.terminal_mode == TerminalMode::Full
+}
 
 pub fn print_info(config: &Config, prep: &PreprocessedData) {
-    if !config.terminal_output {
+    if !is_enabled(config) {
         return;
     }
     
@@ -57,12 +64,12 @@ pub fn print_info(config: &Config, prep: &PreprocessedData) {
     println!("输出匹配文件: {}", config.output_match);
     println!("输出计数文件: {}", config.output_count);
     println!("输出日志文件: {}", config.output_log);
-    println!("终端输出: {}", config.terminal_output);
+    println!("终端模式: {:?}", config.terminal_mode);
     println!("================");
 }
 
 pub fn print_chunking_info(config: &Config, prep: &PreprocessedData) {
-    if !config.terminal_output {
+    if !is_full(config) {
         return;
     }
     
@@ -76,55 +83,55 @@ pub fn print_chunking_info(config: &Config, prep: &PreprocessedData) {
 }
 
 pub fn print_grid_start(config: &Config) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("开始生成网格...");
     }
 }
 
 pub fn print_grid_done(config: &Config) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("网格生成完成");
     }
 }
 
 pub fn print_match_start(config: &Config) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("开始模式匹配...");
     }
 }
 
 pub fn print_match_done(config: &Config) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("匹配完成");
     }
 }
 
 pub fn print_match_file_written(config: &Config, path: &std::path::Path) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("匹配结果已写入 {}", path.display());
     }
 }
 
 pub fn print_count_start(config: &Config) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("开始计数...");
     }
 }
 
 pub fn print_count_done(config: &Config) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("计数完成");
     }
 }
 
 pub fn print_count_file_written(config: &Config, path: &std::path::Path) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("计数结果已写入 {}", path.display());
     }
 }
 
 pub fn print_grid_file_written(config: &Config, path: &std::path::Path) {
-    if config.terminal_output {
+    if is_full(config) {
         println!("网格文件已写入 {}", path.display());
     }
 }
@@ -139,7 +146,7 @@ pub fn print_stats(
     slime_count: usize,
     total_blocks: usize,
 ) {
-    if !config.terminal_output {
+    if !is_enabled(config) {
         return;
     }
     
@@ -162,7 +169,7 @@ pub fn print_stats(
 }
 
 pub fn print_match_summary(config: &Config, matches: &[MatchResult]) {
-    if !config.terminal_output {
+    if !is_full(config) {
         return;
     }
     
@@ -180,7 +187,7 @@ pub fn print_match_summary(config: &Config, matches: &[MatchResult]) {
 }
 
 pub fn print_count_summary(config: &Config, results: &[CountResult]) {
-    if !config.terminal_output {
+    if !is_full(config) {
         return;
     }
     

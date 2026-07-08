@@ -71,7 +71,7 @@ pub fn output_match_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, Mode};
+    use crate::config::{Config, Mode, TerminalMode};
 
     #[test]
     fn test_output_match_file() -> std::io::Result<()> {
@@ -91,7 +91,7 @@ mod tests {
             output_match: true,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();

@@ -11,6 +11,13 @@ pub enum CountShape {
     Circle,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalMode {
+    None,
+    Basic,
+    Full,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     // === 全局基础配置 ===
@@ -67,8 +74,8 @@ pub struct Config {
     /// 是否输出日志文件（{seed}_log.txt）
     pub output_log: bool,
     
-    /// 是否在终端输出信息
-    pub terminal_output: bool,
+    /// 终端输出模式：None=不输出，Basic=只输出Info和Stats，Full=完整输出
+    pub terminal_mode: TerminalMode,
 }
 
 // === 用户输入参数 ===
@@ -106,5 +113,5 @@ pub const CONFIG: Config = Config {
     output_match: true,
     output_count: true,
     output_log: true,
-    terminal_output: true,
+    terminal_mode: TerminalMode::Basic,
 };

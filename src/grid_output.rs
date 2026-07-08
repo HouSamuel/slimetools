@@ -66,7 +66,7 @@ pub fn output_grid_file(config: &Config, prep: &PreprocessedData, grid: &[u8]) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, Mode};
+    use crate::config::{Config, Mode, TerminalMode};
 
     #[test]
     fn test_build_grid_header() {
@@ -86,7 +86,7 @@ mod tests {
             output_match: false,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();
@@ -115,7 +115,7 @@ mod tests {
             output_match: false,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();

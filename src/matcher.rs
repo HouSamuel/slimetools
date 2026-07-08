@@ -84,7 +84,7 @@ pub fn find_matches(config: &Config, prep: &PreprocessedData, grid: &[u8]) -> Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, Mode};
+    use crate::config::{Config, Mode, TerminalMode};
 
     #[test]
     fn test_find_matches_empty_pattern() {
@@ -104,7 +104,7 @@ mod tests {
             output_match: false,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();
@@ -132,7 +132,7 @@ mod tests {
             output_match: true,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();
@@ -160,7 +160,7 @@ mod tests {
             output_match: true,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();
@@ -188,7 +188,7 @@ mod tests {
             output_match: true,
             output_count: false,
             output_log: true,
-            terminal_output: true,
+            terminal_mode: TerminalMode::Full,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();
