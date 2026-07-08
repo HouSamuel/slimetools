@@ -4,7 +4,7 @@
 const WORLD_SEED: i128 = 20260627;
 const CENTER_X: i32 = 0;
 const CENTER_Z: i32 = 0;
-const RADIUS: i32 = 100;
+const RADIUS: i32 = 1000;
 
 /// 匹配模式矩阵（二维，行优先）
 /// 0 = 任意（不检查）
