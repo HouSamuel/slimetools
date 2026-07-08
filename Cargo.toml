@@ -5,6 +5,11 @@ edition = "2021"
 
 [dependencies]
 rayon = "1.8"
+chrono = "0.4"
+
+[[bin]]
+name = "slime_chunk_scanner"
+path = "src/main.rs"
 
 [profile.release]
 lto = true          # 开启全链路优化（编译慢，但跑得快）

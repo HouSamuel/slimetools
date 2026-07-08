@@ -1,88 +1,99 @@
 # slime_chunk_tools
-这是一个用于处理我的世界java版史莱姆区块的工具(vibecoding产物)
 
-由rust编写
-### 史莱姆区块判定
-slime_check.rs
+Minecraft Java 版史莱姆区块扫描工具。
 
-开头硬编码配置区
+## 配置
+
+所有参数都在 `src/config.rs` 里设置，改完直接编译运行就行，`main.rs` 不用动。
+
 ```rust
-const WORLD_SEED: i128 = 20260627;//世界种子，非法种子需要自己在wiki上转换
-const CENTER_X: i32 = 0;//开始查找的区块的x坐标，是区块坐标不是世界坐标
-const CENTER_Z: i32 = 0;//开始查找的区块的z坐标，也是区块坐标不是世界坐标
-const RADIUS: i32 = 100;//向外拓展的半径，单位是区块
-//现在就是以0,0这个区块为中心，向外拓展100个区块，这是一个正方形，作为检查区域
-
-/// 是否输出完整种子文件（0/1 矩阵）：true = 输出，false = 不输出
-const OUTPUT_SEED_FILE: bool = true;//不知道在为什么增加了这个功能，就默认true吧
-```
-### 史莱姆区块匹配
-slime_check_match.rs
-
-开头也是硬编码配置
-```rust
-const WORLD_SEED: i128 = 20260627;
-const CENTER_X: i32 = 0;
-const CENTER_Z: i32 = 0;
-const RADIUS: i32 = 100;
-//这些都一样的
-/// 匹配模式矩阵（二维，行优先）
-/// 0 = 任意（不检查）
-/// 1 = 必须为史莱姆区块
-/// 2 = 必须为非史莱姆区块
-const PATTERN: [[u8; 3]; 3] = [//这里更改矩阵时两个数字也许要改，对应矩阵长宽
-    [2, 1, 2],
-    [2, 1, 2],
-    [1, 2, 1],
+// 匹配图案，改这个矩阵就行
+const PATTERN_ROWS: &[&[u8]] = &[
+    &[1, 1],
+    &[1, 1],
 ];
-const PATTERN_WIDTH: usize = 3;//这里也许要改数字
-const PATTERN_HEIGHT: usize = 3;//这里也许要改数字
 
-/// 匹配目标：0 = 找出所有匹配，1 = 找到一个即停止，2 = 找到两个即停止
-const MATCH_TARGET: usize = 0;
-
-/// 是否输出完整种子文件（0/1 矩阵）：true = 输出，false = 不输出
-const OUTPUT_SEED_FILE: bool = true;
+pub const CONFIG: Config = Config {
+    world_seed: 20260627,      // 世界种子
+    center_block_x: 0,         // 中心区块 X
+    center_block_z: 0,         // 中心区块 Z
+    radius: 100,               // 扫描半径（区块）
+    
+    mode: Mode::Match,         // Check / Match / Count
+    
+    pattern: Some(Pattern::new(...)),  // 匹配图案（Match模式用）
+    match_target: 0,           // 0 = 全部查找，其他值 = 找到指定数量停止
+    
+    count_shape: CountShape::Square,    // Square / Circle（Count模式用）
+    count_size: 5,             // 区域尺寸（Count模式用）
+    count_target: 10,          // 取前多少个（Count模式用）
+    
+    memory_limit_gib: None,    // 内存限制，单位 GiB（可选）
+    
+    generate_seed_file: false, // 是否生成网格图
+    terminal_output: true,     // 终端输出开关
+    log_output: true,          // 日志文件开关
+};
 ```
----
-想要哪个就把对应文件的代码复制到main.rs中
 
-这些都是通过硬编码设置，在目录中运行`cargo run --release`编译后运行
+### 字段说明
 
-输出的文件我想应该足够详细，可以直接读的，这里有输出示例
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| world_seed | i128 | 世界种子 |
+| center_block_x | i32 | 中心区块 X 坐标 |
+| center_block_z | i32 | 中心区块 Z 坐标 |
+| radius | i32 | 扫描半径，以中心区块为原点向四周扩展 |
+| mode | Mode | 运行模式：Check/Match/Count |
+| pattern | Option\<Pattern\> | 匹配图案，0=任意，1=史莱姆，2=普通 |
+| match_target | usize | Match模式：0=全部查找，其他值=找到即停止 |
+| count_shape | CountShape | Count模式：Square=正方形，Circle=圆形 |
+| count_size | i32 | Count模式：正方形边长或圆形半径 |
+| count_target | usize | Count模式：取前多少个区域 |
+| memory_limit_gib | Option\<f64\> | 内存限制，达到后自动分块处理 |
+| generate_seed_file | bool | 是否生成网格可视化文件 |
+| terminal_output | bool | 是否在终端输出进度和统计 |
+| log_output | bool | 是否生成日志文件 |
 
-终端输出示例
-```shell
-   Compiling slime_chunk_scanner v0.1.0 (/Users/qqhou/Desktop/tools/slime_chunk_tool)
-    Finished `release` profile [optimized] target(s) in 2.89s
-     Running `target/release/slime_chunk_scanner`
-生成 201×201 网格...
-网格生成耗时: 288.708µs
-种子文件已输出 seed_20260627.txt
-开始模式匹配...
-匹配耗时: 115µs
-匹配结果已写入 match_20260627.txt
+## 运行模式
 
-========== 扫描完成 ==========
-种子: 20260627
-扫描中心: (0, 0)
-扫描半径: 100
-区块范围: X [-100, 100], Z [-100, 100]
-世界坐标范围: X [-1600, 1615], Z [-1600, 1615]
-总区块数: 201 × 201 = 40401
-匹配目标: 0 个 (找到 2)
-预处理耗时: 116.083µs
-计算+写入耗时: 1.151291ms
-匹配耗时: 290.291µs
-总耗时: 1.558ms
-输出文件: match_20260627.txt
-种子文件: seed_20260627.txt
-  绝对路径: /....../slime_chunk_tool/target/release/seed_20260627.txt
-匹配结果已写入 match_20260627.txt
-  绝对路径: /....../slime_chunk_tool/target/release/match_20260627.txt
+### Check（检测）
+
+扫描区域内所有史莱姆区块，可选输出网格文件。
+
+### Match（匹配）
+
+按图案匹配史莱姆区块分布：
+- 0 = 任意区块
+- 1 = 必须是史莱姆区块
+- 2 = 必须不是史莱姆区块
+
+### Count（计数）
+
+在指定形状的区域内统计史莱姆区块数量，取前 N 个最多的区域。
+
+## 输出文件
+
+- `{seed}_map.txt` - 网格可视化（需开启 generate_seed_file）
+- `{seed}_match.txt` - 匹配结果（Match 模式）
+- `{seed}_count.txt` - 计数结果（Count 模式）
+- `{seed}_log.txt` - 完整日志
+
+## 运行
+
+```bash
+cargo run --release
 ```
-文件输出示例:
 
-输出种子文件：[seed_20260627.txt](seed_20260627.txt)
+## 模块说明
 
-输出匹配文件：[match_20260627.txt](match_20260627.txt)
+- **config** - 纯参数定义，不包含校验逻辑
+- **preprocess** - 输入校验和数据预处理，确保参数合法并提前计算常用值
+- **slime_chunk** - 史莱姆区块判定核心逻辑
+- **grid** - 内存网格生成，追求效率
+- **matcher** - 图案匹配算法
+- **counter** - 区域计数统计
+- **grid_output / match_output / count_output** - 文件输出，格式化美化
+- **stats** - 运行耗时统计
+- **terminal** - 终端输出控制
+- **log** - 日志文件输出
