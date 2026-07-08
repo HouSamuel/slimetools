@@ -1,154 +1,194 @@
-use crate::config::{Config, Mode, CountShape, TerminalMode};
+use crate::config::{Config, TerminalMode};
 use crate::preprocess::PreprocessedData;
 use crate::matcher::MatchResult;
 use crate::counter::CountResult;
+use crate::info;
+use crate::CONFIG;
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-fn is_enabled(config: &Config) -> bool {
-    config.terminal_mode != TerminalMode::None
+fn is_enabled() -> bool {
+    CONFIG.terminal_mode != TerminalMode::None
 }
 
-fn is_full(config: &Config) -> bool {
-    config.terminal_mode == TerminalMode::Full
+fn is_full() -> bool {
+    CONFIG.terminal_mode == TerminalMode::Full
 }
 
 pub fn print_info(config: &Config, prep: &PreprocessedData) {
-    if !is_enabled(config) {
+    if !is_enabled() {
         return;
     }
     
-    println!("==== [Info] ====");
-    println!("种子: {}", config.world_seed);
-    println!("中心区块: ({}, {})", prep.center_block_x, prep.center_block_z);
-    println!("中心世界坐标: x:[{},{}) z:[{},{})", 
-        prep.center_world_x, prep.center_world_x + 16,
-        prep.center_world_z, prep.center_world_z + 16);
-    println!("扫描半径: {}", config.radius);
-    println!("扫描范围 - 区块: 左上角({}, {}) 右下角({}, {})", 
-        prep.top_left_block.0, prep.top_left_block.1,
-        prep.bottom_right_block.0, prep.bottom_right_block.1);
-    println!("扫描范围 - 世界坐标: 左上角x:[{},{}) z:[{},{}) 右下角x:[{},{}) z:[{},{})", 
-        prep.top_left_world.0, prep.top_left_world.0 + 16,
-        prep.top_left_world.1, prep.top_left_world.1 + 16,
-        prep.bottom_right_world.0, prep.bottom_right_world.0 + 16,
-        prep.bottom_right_world.1, prep.bottom_right_world.1 + 16);
-    println!("区块总数: {}×{}={}", prep.x_count, prep.z_count, prep.total_blocks);
-    
-    match config.mode {
-        Mode::Check => {
-            println!("模式: Check");
-        }
-        Mode::Match => {
-            println!("模式: Match");
-            if let Some(p) = &prep.pattern {
-                println!("匹配模式: {}×{}", p.width, p.height);
-                println!("匹配目标: {}", config.match_target);
-            }
-        }
-        Mode::Count => {
-            println!("模式: Count");
-            println!("计数形状: {}", match config.count_shape {
-                CountShape::Square => "正方形",
-                CountShape::Circle => "圆形",
-            });
-            println!("区域尺寸: {}", config.count_size);
-            println!("目标数量: {}", config.count_target);
+    println!("{}", info::build_info(config, prep));
+}
+
+pub struct ProgressDisplay {
+    chunk_count: usize,
+    chunk_rows: usize,
+    current_chunk: usize,
+    grid_elapsed: Duration,
+    last_grid_percent: f64,
+    last_process_percent: f64,
+    update_interval: f64,
+}
+
+impl ProgressDisplay {
+    pub fn new(chunk_count: usize, chunk_rows: usize, update_interval: f64) -> Self {
+        ProgressDisplay {
+            chunk_count,
+            chunk_rows,
+            current_chunk: 0,
+            grid_elapsed: Duration::from_secs(0),
+            last_grid_percent: -1.0,
+            last_process_percent: -1.0,
+            update_interval,
         }
     }
-    
-    if let Some(limit) = config.memory_limit_gib {
-        println!("内存限制: {} GiB", limit);
-    }
-    
-    match config.mode {
-        Mode::Check => {
-            println!("输出网格文件: {}", config.output_map);
+
+    pub fn print_header(&mut self, prep: &PreprocessedData) {
+        if !is_enabled() {
+            return;
         }
-        Mode::Match => {
-            println!("输出匹配文件: {}", config.output_match);
-            println!("输出网格文件: {}", config.output_map);
+
+        println!("==== [Progress] ====");
+        
+        let total_memory_gib = (prep.total_blocks as f64) / (1024.0 * 1024.0 * 1024.0);
+        println!("  预估内存: {:.4} GiB", total_memory_gib);
+        
+        if self.chunk_count > 1 {
+            println!("  分块处理: 是");
+            println!("  分块数量: {}", self.chunk_count);
+            println!("  每块行数: {}", self.chunk_rows);
+            let chunk_memory_gib = ((self.chunk_rows * prep.x_count) as f64) / (1024.0 * 1024.0 * 1024.0);
+            println!("  分块内存: {:.4} GiB", chunk_memory_gib);
+        } else {
+            println!("  分块处理: 否");
         }
-        Mode::Count => {
-            println!("输出计数文件: {}", config.output_count);
-            println!("输出网格文件: {}", config.output_map);
+        
+        println!("  开始计算...");
+    }
+
+    pub fn start_chunk(&mut self, chunk_idx: usize) {
+        if !is_enabled() {
+            return;
         }
+
+        self.current_chunk = chunk_idx;
+        self.grid_elapsed = Duration::from_secs(0);
+        self.last_grid_percent = -1.0;
+        self.last_process_percent = -1.0;
+        print!("[{}/{}]       生成网格    0%     0s    处理网格    0%     0s", 
+            chunk_idx + 1, self.chunk_count);
+        io::stdout().flush().unwrap();
     }
-    
-    println!("输出日志文件: {}", config.output_log);
-    println!("终端模式: {:?}", config.terminal_mode);
-    println!("================");
+
+    pub fn update_grid(&mut self, percent: f64, elapsed: Duration) {
+        if !is_enabled() {
+            return;
+        }
+
+        if (percent - self.last_grid_percent).abs() < self.update_interval && percent < 100.0 {
+            return;
+        }
+        self.last_grid_percent = percent;
+        
+        print!("\r[{}/{}]       生成网格   {:.0}%     {}s    处理网格    0%     0s", 
+            self.current_chunk + 1, self.chunk_count, percent, elapsed.as_secs());
+        
+        io::stdout().flush().unwrap();
+    }
+
+    pub fn finish_grid(&mut self, elapsed: Duration) {
+        if !is_enabled() {
+            return;
+        }
+
+        self.grid_elapsed = elapsed;
+        
+        print!("\r[{}/{}]       生成网格  100%     {}s    处理网格    0%     0s", 
+            self.current_chunk + 1, self.chunk_count, elapsed.as_secs());
+        
+        io::stdout().flush().unwrap();
+    }
+
+    pub fn update_process(&mut self, percent: f64, elapsed: Duration) {
+        if !is_enabled() {
+            return;
+        }
+
+        if (percent - self.last_process_percent).abs() < self.update_interval && percent < 100.0 {
+            return;
+        }
+        self.last_process_percent = percent;
+        
+        print!("\r[{}/{}]       生成网格  100%     {}s    处理网格   {:.0}%     {}s", 
+            self.current_chunk + 1, self.chunk_count, self.grid_elapsed.as_secs(), percent, elapsed.as_secs());
+        
+        io::stdout().flush().unwrap();
+    }
+
+    pub fn finish_process(&mut self, elapsed: Duration) {
+        if !is_enabled() {
+            return;
+        }
+
+        println!("\r[{}/{}]       生成网格  100%     {}s    处理网格  100%     {}s", 
+            self.current_chunk + 1, self.chunk_count, self.grid_elapsed.as_secs(), elapsed.as_secs());
+        
+        io::stdout().flush().unwrap();
+    }
+
+    pub fn finish_all(&self) {}
 }
 
-pub fn print_chunking_info(config: &Config, prep: &PreprocessedData) {
-    if !is_full(config) {
-        return;
-    }
-    
-    if prep.chunk_count > 1 {
-        println!("分块处理: 是");
-        println!("分块数量: {}", prep.chunk_count);
-        println!("每块大小: {}", prep.chunk_size);
-    } else {
-        println!("分块处理: 否");
+pub type SharedProgressDisplay = Arc<Mutex<ProgressDisplay>>;
+
+pub fn print_match_start(_config: &Config) {
+    if is_enabled() {
+        println!("[Info] 开始模式匹配...");
     }
 }
 
-pub fn print_grid_start(config: &Config) {
-    if is_full(config) {
-        println!("开始生成网格...");
+pub fn print_match_done(_config: &Config) {
+    if is_enabled() {
+        println!("[Info] 匹配完成");
     }
 }
 
-pub fn print_grid_done(config: &Config) {
-    if is_full(config) {
-        println!("网格生成完成");
+pub fn print_match_file_written(_config: &Config, path: &std::path::Path) {
+    if is_full() {
+        println!("[Info] 匹配结果已写入 {}", path.display());
     }
 }
 
-pub fn print_match_start(config: &Config) {
-    if is_full(config) {
-        println!("开始模式匹配...");
+pub fn print_count_start(_config: &Config) {
+    if is_enabled() {
+        println!("[Info] 开始计数...");
     }
 }
 
-pub fn print_match_done(config: &Config) {
-    if is_full(config) {
-        println!("匹配完成");
+pub fn print_count_done(_config: &Config) {
+    if is_enabled() {
+        println!("[Info] 计数完成");
     }
 }
 
-pub fn print_match_file_written(config: &Config, path: &std::path::Path) {
-    if is_full(config) {
-        println!("匹配结果已写入 {}", path.display());
+pub fn print_count_file_written(_config: &Config, path: &std::path::Path) {
+    if is_full() {
+        println!("[Info] 计数结果已写入 {}", path.display());
     }
 }
 
-pub fn print_count_start(config: &Config) {
-    if is_full(config) {
-        println!("开始计数...");
-    }
-}
-
-pub fn print_count_done(config: &Config) {
-    if is_full(config) {
-        println!("计数完成");
-    }
-}
-
-pub fn print_count_file_written(config: &Config, path: &std::path::Path) {
-    if is_full(config) {
-        println!("计数结果已写入 {}", path.display());
-    }
-}
-
-pub fn print_grid_file_written(config: &Config, path: &std::path::Path) {
-    if is_full(config) {
-        println!("网格文件已写入 {}", path.display());
+pub fn print_grid_file_written(_config: &Config, path: &std::path::Path) {
+    if is_full() {
+        println!("[Info] 网格文件已写入 {}", path.display());
     }
 }
 
 pub fn print_stats(
-    config: &Config,
+    _config: &Config,
     prep_time: Duration,
     grid_time: Duration,
     process_time: Duration,
@@ -157,7 +197,7 @@ pub fn print_stats(
     slime_count: usize,
     total_blocks: usize,
 ) {
-    if !is_enabled(config) {
+    if !is_enabled() {
         return;
     }
     
@@ -179,8 +219,8 @@ pub fn print_stats(
     println!("================");
 }
 
-pub fn print_match_summary(config: &Config, matches: &[MatchResult]) {
-    if !is_full(config) {
+pub fn print_match_summary(_config: &Config, matches: &[MatchResult]) {
+    if !is_full() {
         return;
     }
     
@@ -197,8 +237,8 @@ pub fn print_match_summary(config: &Config, matches: &[MatchResult]) {
     }
 }
 
-pub fn print_count_summary(config: &Config, results: &[CountResult]) {
-    if !is_full(config) {
+pub fn print_count_summary(_config: &Config, results: &[CountResult]) {
+    if !is_full() {
         return;
     }
     

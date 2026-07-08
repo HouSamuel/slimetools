@@ -1,5 +1,6 @@
 use crate::config::{Config, Mode};
 use crate::slime_chunk::{compute_fx, compute_fz};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Pattern {
@@ -76,6 +77,14 @@ fn flatten_pattern(pattern_rows: &[&[u8]]) -> Pattern {
     }
 }
 
+fn generate_challenge_code() -> String {
+    let now = SystemTime::now();
+    let since_epoch = now.duration_since(UNIX_EPOCH).unwrap();
+    let minutes_since_epoch = since_epoch.as_secs() / 60;
+    let ten_minute_block = minutes_since_epoch / 10;
+    format!("{:08x}", ten_minute_block)
+}
+
 fn validate(config: &Config) -> Result<(), String> {
     if config.radius < 0 {
         return Err("半径不能为负数".to_string());
@@ -120,13 +129,29 @@ fn validate(config: &Config) -> Result<(), String> {
         Mode::Check => {}
     }
     
-    if let Some(limit) = config.memory_limit_gib {
-        if limit <= 0.0 {
-            return Err("内存限制必须大于0".to_string());
-        }
+    if config.memory_limit_gib < 0.0 {
+        return Err("内存限制不能为负数".to_string());
+    }
+    
+    if config.progress_update_interval <= 0.0 || config.progress_update_interval > 100.0 {
+        return Err("进度更新分度值必须在 0.01-100.0 之间".to_string());
     }
     
     Ok(())
+}
+
+fn estimate_map_file_size(config: &Config, x_count: usize, z_count: usize) -> f64 {
+    let cell_width = 2;
+    let header_lines = 5;
+    let line_ending = 2;
+    
+    let line_size = (10 + x_count * cell_width + line_ending) as f64;
+    let total_size_bytes = (z_count + header_lines) as f64 * line_size;
+    total_size_bytes / (1024.0 * 1024.0 * 1024.0)
+}
+
+fn should_require_challenge(config: &Config, x_count: usize, z_count: usize) -> bool {
+    config.secure_mode && config.output_map && estimate_map_file_size(config, x_count, z_count) > 5.0
 }
 
 pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
@@ -140,6 +165,20 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
     let x_count = (max_block_x - min_block_x + 1) as usize;
     let z_count = (max_block_z - min_block_z + 1) as usize;
     let total_blocks = x_count * z_count;
+    
+    if should_require_challenge(config, x_count, z_count) {
+        let correct_code = generate_challenge_code();
+        match &config.challenge_code {
+            Some(input_code) => {
+                if input_code != &correct_code {
+                    return Err(format!("挑战码错误！正确挑战码: {}", correct_code));
+                }
+            }
+            None => {
+                return Err(format!("安全模式已启用，预估map文件大于5GiB，请输入挑战码！当前挑战码: {}", correct_code));
+            }
+        }
+    }
     
     let center_world_x = config.center_block_x * 16;
     let center_world_z = config.center_block_z * 16;
@@ -184,7 +223,12 @@ pub fn preprocess(config: &Config) -> Result<PreprocessedData, String> {
     let one_cell = String::from("██").into_bytes();
     let zero_cell = String::from("░░").into_bytes();
     
-    let (chunk_count, chunk_size) = calculate_chunking(total_blocks, config.memory_limit_gib.map(|gib| (gib * 1024.0 * 1024.0 * 1024.0) as usize));
+    let memory_limit_bytes = if config.memory_limit_gib > 0.0 {
+        Some((config.memory_limit_gib * 1024.0 * 1024.0 * 1024.0) as usize)
+    } else {
+        None
+    };
+    let (chunk_count, chunk_size) = calculate_chunking(total_blocks, memory_limit_bytes);
     
     let pattern = config.pattern.map(flatten_pattern);
     
@@ -260,7 +304,7 @@ mod tests {
             center_block_z: 0,
             radius: 2,
             mode: Mode::Check,
-            memory_limit_gib: None,
+            memory_limit_gib: 0.0,
             pattern: None,
             match_target: 0,
             count_shape: crate::config::CountShape::Square,
@@ -271,6 +315,9 @@ mod tests {
             output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
+            secure_mode: false,
+            challenge_code: None,
+            progress_update_interval: 1.0,
         };
         
         let prep = preprocess(&config).unwrap();
@@ -294,7 +341,7 @@ mod tests {
             center_block_z: 20,
             radius: 1,
             mode: Mode::Check,
-            memory_limit_gib: None,
+            memory_limit_gib: 0.0,
             pattern: None,
             match_target: 0,
             count_shape: crate::config::CountShape::Square,
@@ -305,6 +352,9 @@ mod tests {
             output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
+            secure_mode: false,
+            challenge_code: None,
+            progress_update_interval: 1.0,
         };
         
         let prep = preprocess(&config).unwrap();
@@ -325,7 +375,7 @@ mod tests {
             center_block_z: 3,
             radius: 1,
             mode: Mode::Check,
-            memory_limit_gib: None,
+            memory_limit_gib: 0.0,
             pattern: None,
             match_target: 0,
             count_shape: crate::config::CountShape::Square,
@@ -336,6 +386,9 @@ mod tests {
             output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
+            secure_mode: false,
+            challenge_code: None,
+            progress_update_interval: 1.0,
         };
         
         let prep = preprocess(&config).unwrap();
@@ -364,7 +417,7 @@ mod tests {
             center_block_z: 0,
             radius: 10,
             mode: Mode::Match,
-            memory_limit_gib: None,
+            memory_limit_gib: 0.0,
             pattern: Some(&[&[1, 1], &[1, 1]]),
             match_target: 0,
             count_shape: crate::config::CountShape::Square,
@@ -375,6 +428,9 @@ mod tests {
             output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
+            secure_mode: false,
+            challenge_code: None,
+            progress_update_interval: 1.0,
         };
         
         assert!(validate(&config).is_ok());
@@ -388,7 +444,7 @@ mod tests {
             center_block_z: 0,
             radius: 10,
             mode: Mode::Match,
-            memory_limit_gib: None,
+            memory_limit_gib: 0.0,
             pattern: Some(&[&[1, 3], &[1, 1]]),
             match_target: 0,
             count_shape: crate::config::CountShape::Square,
@@ -399,6 +455,9 @@ mod tests {
             output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
+            secure_mode: false,
+            challenge_code: None,
+            progress_update_interval: 1.0,
         };
         
         assert!(validate(&config).is_err());

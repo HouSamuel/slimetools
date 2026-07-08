@@ -1,4 +1,7 @@
-use std::time::Instant;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 mod config;
 mod slime_chunk;
@@ -9,6 +12,7 @@ mod counter;
 mod grid_output;
 mod match_output;
 mod count_output;
+mod info;
 mod terminal;
 mod log;
 
@@ -24,103 +28,486 @@ fn main() -> std::io::Result<()> {
     let prep = preprocess::preprocess(config).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     let prep_time = prep_start.elapsed();
     
-    let grid_start = Instant::now();
-    let grid = grid::generate_grid(config, &prep);
-    let slime_count = grid.iter().filter(|&&x| x == 1).count();
-    let grid_time = grid_start.elapsed();
-    
     print_info(config, &prep);
-    print_chunking_info(config, &prep);
     
-    let mut log_writer = log::LogWriter::new(config)?;
-    log_writer.write_info(config, &prep)?;
+    let mut log_writer = log::LogWriter::new(config).unwrap_or_else(|| {
+        log::LogWriter {
+            inner: Arc::new(std::sync::Mutex::new(None)),
+        }
+    });
+    log_writer.write_info(config, &prep);
     
-    print_grid_start(config);
-    print_grid_done(config);
-    
-    let process_start = Instant::now();
+    let mut total_slime_count = 0usize;
+    let grid_start = Instant::now();
     
     match config.mode {
         config::Mode::Check => {
-            let process_time = process_start.elapsed();
-            
-            let output_start = Instant::now();
-            
-            if config.output_map {
-                let path = grid_output::output_grid_file(config, &prep, &grid)?;
-                print_grid_file_written(config, &path);
-            }
-            
-            let output_time = output_start.elapsed();
-            let total_time = total_start.elapsed();
-            
-            print_stats(config, prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks);
-            log_writer.write_stats(prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks)?;
-            log_writer.flush()?;
+            process_check_mode(config, &prep, &mut total_slime_count, &mut log_writer)?;
         }
         
         config::Mode::Match => {
-            print_match_start(config);
-            
-            let matches = matcher::find_matches(config, &prep, &grid);
-            
-            print_match_done(config);
-            
-            let process_time = process_start.elapsed();
-            
-            let output_start = Instant::now();
-            
-            if config.output_match {
-                let match_path = match_output::output_match_file(config, &prep, &matches)?;
-                print_match_file_written(config, &match_path);
-            }
-            
-            print_match_summary(config, &matches);
-            
-            if config.output_map {
-                let grid_path = grid_output::output_grid_file(config, &prep, &grid)?;
-                print_grid_file_written(config, &grid_path);
-            }
-            
-            let output_time = output_start.elapsed();
-            let total_time = total_start.elapsed();
-            
-            print_stats(config, prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks);
-            log_writer.write_stats(prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks)?;
-            log_writer.flush()?;
+            process_match_mode(config, &prep, &mut total_slime_count, &mut log_writer)?;
         }
         
         config::Mode::Count => {
-            print_count_start(config);
-            
-            let results = counter::count_slime_chunks(&prep, &grid, config.count_shape, config.count_size, config.count_target);
-            
-            print_count_done(config);
-            
-            let process_time = process_start.elapsed();
-            
-            let output_start = Instant::now();
-            
-            if config.output_count {
-                let count_path = count_output::output_count_file(config, &prep, &results)?;
-                print_count_file_written(config, &count_path);
-            }
-            
-            print_count_summary(config, &results);
-            
-            if config.output_map {
-                let grid_path = grid_output::output_grid_file(config, &prep, &grid)?;
-                print_grid_file_written(config, &grid_path);
-            }
-            
-            let output_time = output_start.elapsed();
-            let total_time = total_start.elapsed();
-            
-            print_stats(config, prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks);
-            log_writer.write_stats(prep_time, grid_time, process_time, output_time, total_time, slime_count, prep.total_blocks)?;
-            log_writer.flush()?;
+            process_count_mode(config, &prep, &mut total_slime_count, &mut log_writer)?;
         }
     }
+    
+    let grid_time = grid_start.elapsed();
+    let total_time = total_start.elapsed();
+    
+    print_stats(config, prep_time, grid_time, grid_time, grid_time, total_time, total_slime_count, prep.total_blocks);
+    log_writer.write_stats(prep_time, grid_time, grid_time, grid_time, total_time, total_slime_count, prep.total_blocks);
+    
+    Ok(())
+}
+
+fn process_check_mode(
+    config: &config::Config,
+    prep: &preprocess::PreprocessedData,
+    total_slime_count: &mut usize,
+    log_writer: &mut log::LogWriter,
+) -> std::io::Result<()> {
+    let chunk_rows = if prep.chunk_count > 1 {
+        prep.chunk_size / prep.x_count
+    } else {
+        prep.z_count
+    };
+    
+    let progress_display = Arc::new(Mutex::new(ProgressDisplay::new(prep.chunk_count, chunk_rows, config.progress_update_interval)));
+    progress_display.lock().unwrap().print_header(prep);
+    log_writer.write_progress_header(config, prep);
+    
+    if prep.chunk_count > 1 {
+        let mut all_slime_count = 0;
+        let chunk_count_val = prep.chunk_count;
+        
+        for chunk_idx in 0..prep.chunk_count {
+            let z_start = chunk_idx * (prep.chunk_size / prep.x_count);
+            let z_end = std::cmp::min(z_start + (prep.chunk_size / prep.x_count), prep.z_count);
+            let current_chunk_rows = z_end - z_start;
+            
+            progress_display.lock().unwrap().start_chunk(chunk_idx);
+            log_writer.write_chunk_start(chunk_idx, chunk_count_val);
+            
+            let progress_counter = Arc::new(AtomicUsize::new(0));
+            let counter_clone = Arc::clone(&progress_counter);
+            let mut log_clone = log_writer.clone();
+            let display_clone = Arc::clone(&progress_display);
+            let chunk_idx_val = chunk_idx;
+            
+            let start_time = Instant::now();
+            let handle = thread::spawn(move || {
+                while counter_clone.load(Ordering::Relaxed) < current_chunk_rows {
+                    let count = counter_clone.load(Ordering::Relaxed);
+                    let percent = (count as f64 / current_chunk_rows as f64) * 100.0;
+                    let elapsed = start_time.elapsed();
+                    
+                    display_clone.lock().unwrap().update_grid(percent, elapsed);
+                    log_clone.write_chunk_update(chunk_idx_val, chunk_count_val, percent, elapsed);
+                    
+                    thread::sleep(Duration::from_millis(200));
+                }
+            });
+            
+            let chunk = grid::generate_grid_chunk_with_progress(config, prep, z_start, z_end, &progress_counter);
+            
+            handle.join().unwrap();
+            
+            let grid_elapsed = start_time.elapsed();
+            progress_display.lock().unwrap().finish_grid(grid_elapsed);
+            log_writer.write_chunk_finish(chunk_idx, chunk_count_val, grid_elapsed);
+            
+            all_slime_count += chunk.iter().filter(|&&x| x == 1).count();
+            
+            progress_display.lock().unwrap().finish_process(Duration::from_secs(0));
+            
+            if config.output_map {
+                let path = grid_output::output_grid_chunk(config, prep, &chunk, z_start, z_end)?;
+                print_grid_file_written(config, &path);
+            }
+        }
+        
+        progress_display.lock().unwrap().finish_all();
+        log_writer.write_progress_finish();
+        *total_slime_count = all_slime_count;
+    } else {
+        let progress_counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = Arc::clone(&progress_counter);
+        let mut log_clone = log_writer.clone();
+        let display_clone = Arc::clone(&progress_display);
+        let z_count_val = prep.z_count;
+        
+        progress_display.lock().unwrap().start_chunk(0);
+        log_writer.write_chunk_start(0, 1);
+        
+        let start_time = Instant::now();
+        let handle = thread::spawn(move || {
+            while counter_clone.load(Ordering::Relaxed) < z_count_val {
+                let count = counter_clone.load(Ordering::Relaxed);
+                let percent = (count as f64 / z_count_val as f64) * 100.0;
+                let elapsed = start_time.elapsed();
+                
+                display_clone.lock().unwrap().update_grid(percent, elapsed);
+                log_clone.write_chunk_update(0, 1, percent, elapsed);
+                
+                thread::sleep(Duration::from_millis(200));
+            }
+        });
+        
+        let grid = grid::generate_grid_with_progress(config, prep, &progress_counter);
+        
+        handle.join().unwrap();
+        
+        let grid_elapsed = start_time.elapsed();
+        progress_display.lock().unwrap().finish_grid(grid_elapsed);
+        log_writer.write_chunk_finish(0, 1, grid_elapsed);
+        
+        *total_slime_count = grid.iter().filter(|&&x| x == 1).count();
+        
+        progress_display.lock().unwrap().finish_process(Duration::from_secs(0));
+        progress_display.lock().unwrap().finish_all();
+        log_writer.write_progress_finish();
+        
+        if config.output_map {
+            let path = grid_output::output_grid_file(config, prep, &grid)?;
+            print_grid_file_written(config, &path);
+        }
+    }
+    
+    Ok(())
+}
+
+fn process_match_mode(
+    config: &config::Config,
+    prep: &preprocess::PreprocessedData,
+    total_slime_count: &mut usize,
+    log_writer: &mut log::LogWriter,
+) -> std::io::Result<()> {
+    let chunk_rows = if prep.chunk_count > 1 {
+        prep.chunk_size / prep.x_count
+    } else {
+        prep.z_count
+    };
+    
+    let progress_display = Arc::new(Mutex::new(ProgressDisplay::new(prep.chunk_count, chunk_rows, config.progress_update_interval)));
+    progress_display.lock().unwrap().print_header(prep);
+    log_writer.write_progress_header(config, prep);
+    
+    let mut all_matches = Vec::new();
+    let mut all_slime_count = 0;
+    
+    if prep.chunk_count > 1 {
+        let chunk_count_val = prep.chunk_count;
+        
+        for chunk_idx in 0..prep.chunk_count {
+            let z_start = chunk_idx * (prep.chunk_size / prep.x_count);
+            let z_end = std::cmp::min(z_start + (prep.chunk_size / prep.x_count), prep.z_count);
+            let current_chunk_rows = z_end - z_start;
+            
+            progress_display.lock().unwrap().start_chunk(chunk_idx);
+            log_writer.write_chunk_start(chunk_idx, chunk_count_val);
+            
+            let progress_counter = Arc::new(AtomicUsize::new(0));
+            let counter_clone = Arc::clone(&progress_counter);
+            let mut log_clone = log_writer.clone();
+            let display_clone = Arc::clone(&progress_display);
+            let chunk_idx_val = chunk_idx;
+            
+            let start_time = Instant::now();
+            let handle = thread::spawn(move || {
+                while counter_clone.load(Ordering::Relaxed) < current_chunk_rows {
+                    let count = counter_clone.load(Ordering::Relaxed);
+                    let percent = (count as f64 / current_chunk_rows as f64) * 100.0;
+                    let elapsed = start_time.elapsed();
+                    
+                    display_clone.lock().unwrap().update_grid(percent, elapsed);
+                    log_clone.write_chunk_update(chunk_idx_val, chunk_count_val, percent, elapsed);
+                    
+                    thread::sleep(Duration::from_millis(200));
+                }
+            });
+            
+            let chunk = grid::generate_grid_chunk_with_progress(config, prep, z_start, z_end, &progress_counter);
+            
+            handle.join().unwrap();
+            
+            let grid_elapsed = start_time.elapsed();
+            progress_display.lock().unwrap().finish_grid(grid_elapsed);
+            log_writer.write_chunk_finish(chunk_idx, chunk_count_val, grid_elapsed);
+            
+            all_slime_count += chunk.iter().filter(|&&x| x == 1).count();
+            
+            let max_x_idx = prep.x_count - prep.pattern.as_ref().map(|p| p.width).unwrap_or(0);
+            let max_z_idx = z_end - z_start - prep.pattern.as_ref().map(|p| p.height).unwrap_or(0);
+            let process_total = (max_z_idx + 1) * (max_x_idx + 1);
+            
+            let process_progress = Arc::new(AtomicUsize::new(0));
+            let process_counter_clone = Arc::clone(&process_progress);
+            let process_display_clone = Arc::clone(&progress_display);
+            
+            let process_start = Instant::now();
+            let process_handle = thread::spawn(move || {
+                while process_counter_clone.load(Ordering::Relaxed) < process_total {
+                    let count = process_counter_clone.load(Ordering::Relaxed);
+                    let percent = (count as f64 / process_total as f64) * 100.0;
+                    let elapsed = process_start.elapsed();
+                    
+                    process_display_clone.lock().unwrap().update_process(percent, elapsed);
+                    
+                    thread::sleep(Duration::from_millis(200));
+                }
+            });
+            
+            let chunk_matches = matcher::find_matches_chunk_with_progress(config, prep, &chunk, z_start, z_end, &process_progress);
+            
+            process_handle.join().unwrap();
+            
+            let process_elapsed = process_start.elapsed();
+            progress_display.lock().unwrap().finish_process(process_elapsed);
+            log_writer.write_log(&format!("[{}] 块 [{}/{}] 匹配完成，耗时 {}s", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), chunk_idx + 1, chunk_count_val, process_elapsed.as_secs()));
+            
+            all_matches.extend(chunk_matches);
+            
+            if config.match_target > 0 && all_matches.len() >= config.match_target {
+                progress_display.lock().unwrap().finish_all();
+                log_writer.write_progress_finish();
+                break;
+            }
+        }
+        
+        if all_matches.len() < config.match_target || config.match_target == 0 {
+            progress_display.lock().unwrap().finish_all();
+            log_writer.write_progress_finish();
+        }
+    } else {
+        let progress_counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = Arc::clone(&progress_counter);
+        let mut log_clone = log_writer.clone();
+        let display_clone = Arc::clone(&progress_display);
+        let z_count_val = prep.z_count;
+        
+        progress_display.lock().unwrap().start_chunk(0);
+        log_writer.write_chunk_start(0, 1);
+        
+        let start_time = Instant::now();
+        let handle = thread::spawn(move || {
+            while counter_clone.load(Ordering::Relaxed) < z_count_val {
+                let count = counter_clone.load(Ordering::Relaxed);
+                let percent = (count as f64 / z_count_val as f64) * 100.0;
+                let elapsed = start_time.elapsed();
+                
+                display_clone.lock().unwrap().update_grid(percent, elapsed);
+                log_clone.write_chunk_update(0, 1, percent, elapsed);
+                
+                thread::sleep(Duration::from_millis(200));
+            }
+        });
+        
+        let grid = grid::generate_grid_with_progress(config, prep, &progress_counter);
+        
+        handle.join().unwrap();
+        
+        let grid_elapsed = start_time.elapsed();
+        progress_display.lock().unwrap().finish_grid(grid_elapsed);
+        log_writer.write_chunk_finish(0, 1, grid_elapsed);
+        
+        all_slime_count = grid.iter().filter(|&&x| x == 1).count();
+        
+        let process_start = Instant::now();
+        all_matches = matcher::find_matches(config, prep, &grid);
+        let process_elapsed = process_start.elapsed();
+        
+        progress_display.lock().unwrap().finish_process(process_elapsed);
+        progress_display.lock().unwrap().finish_all();
+        log_writer.write_progress_finish();
+        
+        if config.output_map {
+            let path = grid_output::output_grid_file(config, prep, &grid)?;
+            print_grid_file_written(config, &path);
+        }
+    }
+    
+    *total_slime_count = all_slime_count;
+    
+    all_matches.sort_by(|a, b| a.distance_sq.cmp(&b.distance_sq));
+    
+    if config.match_target > 0 {
+        all_matches.truncate(config.match_target);
+    }
+    
+    if config.output_match {
+        let match_path = match_output::output_match_file(config, prep, &all_matches)?;
+        print_match_file_written(config, &match_path);
+        log_writer.write_match_file_written(&match_path);
+    }
+    
+    print_match_summary(config, &all_matches);
+    log_writer.write_match_summary(&all_matches);
+    
+    Ok(())
+}
+
+fn process_count_mode(
+    config: &config::Config,
+    prep: &preprocess::PreprocessedData,
+    total_slime_count: &mut usize,
+    log_writer: &mut log::LogWriter,
+) -> std::io::Result<()> {
+    let chunk_rows = if prep.chunk_count > 1 {
+        prep.chunk_size / prep.x_count
+    } else {
+        prep.z_count
+    };
+    
+    let progress_display = Arc::new(Mutex::new(ProgressDisplay::new(prep.chunk_count, chunk_rows, config.progress_update_interval)));
+    progress_display.lock().unwrap().print_header(prep);
+    log_writer.write_progress_header(config, prep);
+    
+    let mut all_results = Vec::new();
+    let mut all_slime_count = 0;
+    
+    if prep.chunk_count > 1 {
+        let chunk_count_val = prep.chunk_count;
+        
+        for chunk_idx in 0..prep.chunk_count {
+            let z_start = chunk_idx * (prep.chunk_size / prep.x_count);
+            let z_end = std::cmp::min(z_start + (prep.chunk_size / prep.x_count), prep.z_count);
+            let current_chunk_rows = z_end - z_start;
+            
+            progress_display.lock().unwrap().start_chunk(chunk_idx);
+            log_writer.write_chunk_start(chunk_idx, chunk_count_val);
+            
+            let progress_counter = Arc::new(AtomicUsize::new(0));
+            let counter_clone = Arc::clone(&progress_counter);
+            let mut log_clone = log_writer.clone();
+            let display_clone = Arc::clone(&progress_display);
+            let chunk_idx_val = chunk_idx;
+            
+            let start_time = Instant::now();
+            let handle = thread::spawn(move || {
+                while counter_clone.load(Ordering::Relaxed) < current_chunk_rows {
+                    let count = counter_clone.load(Ordering::Relaxed);
+                    let percent = (count as f64 / current_chunk_rows as f64) * 100.0;
+                    let elapsed = start_time.elapsed();
+                    
+                    display_clone.lock().unwrap().update_grid(percent, elapsed);
+                    log_clone.write_chunk_update(chunk_idx_val, chunk_count_val, percent, elapsed);
+                    
+                    thread::sleep(Duration::from_millis(200));
+                }
+            });
+            
+            let chunk = grid::generate_grid_chunk_with_progress(config, prep, z_start, z_end, &progress_counter);
+            
+            handle.join().unwrap();
+            
+            let grid_elapsed = start_time.elapsed();
+            progress_display.lock().unwrap().finish_grid(grid_elapsed);
+            log_writer.write_chunk_finish(chunk_idx, chunk_count_val, grid_elapsed);
+            
+            all_slime_count += chunk.iter().filter(|&&x| x == 1).count();
+            
+            let start_block_z = prep.min_block_z + z_start as i32;
+            let end_block_z = prep.min_block_z + z_end as i32 - 1;
+            let process_total = ((end_block_z - start_block_z + 1) as usize) * ((prep.max_block_x - prep.min_block_x + 1) as usize);
+            
+            let process_progress = Arc::new(AtomicUsize::new(0));
+            let process_counter_clone = Arc::clone(&process_progress);
+            let process_display_clone = Arc::clone(&progress_display);
+            
+            let process_start = Instant::now();
+            let process_handle = thread::spawn(move || {
+                while process_counter_clone.load(Ordering::Relaxed) < process_total {
+                    let count = process_counter_clone.load(Ordering::Relaxed);
+                    let percent = (count as f64 / process_total as f64) * 100.0;
+                    let elapsed = process_start.elapsed();
+                    
+                    process_display_clone.lock().unwrap().update_process(percent, elapsed);
+                    
+                    thread::sleep(Duration::from_millis(200));
+                }
+            });
+            
+            let chunk_results = counter::count_slime_chunks_chunk_with_progress(prep, &chunk, z_start, z_end, config.count_shape, config.count_size, &process_progress);
+            
+            process_handle.join().unwrap();
+            
+            let process_elapsed = process_start.elapsed();
+            progress_display.lock().unwrap().finish_process(process_elapsed);
+            log_writer.write_log(&format!("[{}] 块 [{}/{}] 计数完成，耗时 {}s", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"), chunk_idx + 1, chunk_count_val, process_elapsed.as_secs()));
+            
+            all_results.extend(chunk_results);
+        }
+        
+        progress_display.lock().unwrap().finish_all();
+        log_writer.write_progress_finish();
+    } else {
+        let progress_counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = Arc::clone(&progress_counter);
+        let mut log_clone = log_writer.clone();
+        let display_clone = Arc::clone(&progress_display);
+        let z_count_val = prep.z_count;
+        
+        progress_display.lock().unwrap().start_chunk(0);
+        log_writer.write_chunk_start(0, 1);
+        
+        let start_time = Instant::now();
+        let handle = thread::spawn(move || {
+            while counter_clone.load(Ordering::Relaxed) < z_count_val {
+                let count = counter_clone.load(Ordering::Relaxed);
+                let percent = (count as f64 / z_count_val as f64) * 100.0;
+                let elapsed = start_time.elapsed();
+                
+                display_clone.lock().unwrap().update_grid(percent, elapsed);
+                log_clone.write_chunk_update(0, 1, percent, elapsed);
+                
+                thread::sleep(Duration::from_millis(200));
+            }
+        });
+        
+        let grid = grid::generate_grid_with_progress(config, prep, &progress_counter);
+        
+        handle.join().unwrap();
+        
+        let grid_elapsed = start_time.elapsed();
+        progress_display.lock().unwrap().finish_grid(grid_elapsed);
+        log_writer.write_chunk_finish(0, 1, grid_elapsed);
+        
+        all_slime_count = grid.iter().filter(|&&x| x == 1).count();
+        
+        let process_start = Instant::now();
+        all_results = counter::count_slime_chunks(prep, &grid, config.count_shape, config.count_size, config.count_target);
+        let process_elapsed = process_start.elapsed();
+        
+        progress_display.lock().unwrap().finish_process(process_elapsed);
+        progress_display.lock().unwrap().finish_all();
+        log_writer.write_progress_finish();
+        
+        if config.output_map {
+            let path = grid_output::output_grid_file(config, prep, &grid)?;
+            print_grid_file_written(config, &path);
+        }
+    }
+    
+    *total_slime_count = all_slime_count;
+    
+    all_results.sort_by(|a, b| {
+        b.slime_count.cmp(&a.slime_count)
+            .then_with(|| a.distance_sq.cmp(&b.distance_sq))
+    });
+    
+    all_results.truncate(config.count_target);
+    
+    if config.output_count {
+        let count_path = count_output::output_count_file(config, prep, &all_results)?;
+        print_count_file_written(config, &count_path);
+        log_writer.write_count_file_written(&count_path);
+    }
+    
+    print_count_summary(config, &all_results);
+    log_writer.write_count_summary(&all_results);
     
     Ok(())
 }

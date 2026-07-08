@@ -36,8 +36,8 @@ pub struct Config {
     /// 运行模式：Check/Match/Count
     pub mode: Mode,
     
-    /// 内存限制（GiB），达到后自动分块处理
-    pub memory_limit_gib: Option<f64>,
+    /// 内存限制（GiB），0 = 无限制，达到后自动分块处理
+    pub memory_limit_gib: f64,
     
     // === Match 模式专属配置 ===
     /// 匹配图案（二维数组形式），0=任意区块，1=必须是史莱姆区块，2=必须不是史莱姆区块
@@ -62,20 +62,30 @@ pub struct Config {
     pub count_target: usize,
     
     // === 输出配置 ===
-    /// 是否输出网格文件（{seed}_map.txt）
+    /// 是否输出网格文件（{seed}_map.txt），所有模式有效
     pub output_map: bool,
     
-    /// 是否输出匹配结果文件（{seed}_match.txt）
+    /// 是否输出匹配结果文件（{seed}_match.txt），仅 Match 模式有效
     pub output_match: bool,
     
-    /// 是否输出计数结果文件（{seed}_count.txt）
+    /// 是否输出计数结果文件（{seed}_count.txt），仅 Count 模式有效
     pub output_count: bool,
     
-    /// 是否输出日志文件（{seed}_log.txt）
+    /// 是否输出日志文件（{seed}_log.txt），所有模式有效
     pub output_log: bool,
     
     /// 终端输出模式：None=不输出，Basic=只输出Info和Stats，Full=完整输出
     pub terminal_mode: TerminalMode,
+    
+    // === 安全选项 ===
+    /// 是否启用安全模式（挑战码验证），默认关闭
+    pub secure_mode: bool,
+    
+    /// 用户输入的挑战码，安全模式下必须正确才能正常运行
+    pub challenge_code: Option<String>,
+    
+    /// 进度更新分度值（百分比），输入1表示每1%更新一次终端
+    pub progress_update_interval: f64,
 }
 
 // === 用户输入参数 ===
@@ -98,7 +108,7 @@ pub const CONFIG: Config = Config {
     center_block_z: 0,
     radius: 100000,
     mode: Mode::Match,
-    memory_limit_gib: 4,
+    memory_limit_gib: 4.0,
     
     // === Match 模式专属配置 ===
     pattern: Some(PATTERN_ROWS),
@@ -115,4 +125,9 @@ pub const CONFIG: Config = Config {
     output_count: true,
     output_log: true,
     terminal_mode: TerminalMode::Basic,
+    progress_update_interval: 1.0,
+    
+    // === 安全选项 ===
+    secure_mode: true,
+    challenge_code: None,
 };

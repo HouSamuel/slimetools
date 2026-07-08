@@ -47,8 +47,10 @@ pub fn output_match_file(
     writeln!(file, "匹配目标: {}", config.match_target)?;
     writeln!(file, "找到数量: {}", matches.len())?;
     
-    if let Some(limit) = config.memory_limit_gib {
-        writeln!(file, "内存限制: {} GiB", limit)?;
+    if config.memory_limit_gib > 0.0 {
+        writeln!(file, "内存限制: {} GiB", config.memory_limit_gib)?;
+    } else {
+        writeln!(file, "内存限制: 无限制")?;
     }
     
     writeln!(file)?;
@@ -81,7 +83,7 @@ mod tests {
             center_block_z: 0,
             radius: 5,
             mode: Mode::Match,
-            memory_limit_gib: None,
+            memory_limit_gib: 0.0,
             pattern: Some(&[&[2, 2], &[2, 2]]),
             match_target: 0,
             count_shape: crate::config::CountShape::Square,
@@ -92,6 +94,9 @@ mod tests {
             output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
+            secure_mode: false,
+            challenge_code: None,
+            progress_update_interval: 1.0,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();

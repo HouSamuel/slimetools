@@ -63,6 +63,52 @@ pub fn output_grid_file(config: &Config, prep: &PreprocessedData, grid: &[u8]) -
     Ok(path.to_path_buf())
 }
 
+pub fn output_grid_chunk(
+    config: &Config,
+    prep: &PreprocessedData,
+    chunk: &[u8],
+    z_start: usize,
+    z_end: usize,
+) -> std::io::Result<std::path::PathBuf> {
+    let filename = format!("{}_map_{}-{}.txt", config.world_seed, z_start, z_end - 1);
+    let path = Path::new(&filename);
+    
+    let header = build_grid_header(config, prep);
+    
+    let lines: Vec<String> = (z_start..z_end)
+        .into_par_iter()
+        .map(|z_idx| {
+            let chunk_z_idx = z_idx - z_start;
+            let z_header = String::from_utf8_lossy(&prep.z_headers[z_idx]);
+            let cells: String = (0..prep.x_count)
+                .map(|x_idx| {
+                    let val = chunk[chunk_z_idx * prep.x_count + x_idx];
+                    if val == 1 {
+                        String::from_utf8_lossy(&prep.one_cell)
+                    } else {
+                        String::from_utf8_lossy(&prep.zero_cell)
+                    }
+                })
+                .collect();
+            format!("{}{}\n", z_header, cells)
+        })
+        .collect();
+    
+    let x_header_line: String = prep.x_headers.iter()
+        .map(|h| String::from_utf8_lossy(h))
+        .collect();
+    let x_header = format!("{}{}\n", " ".repeat(prep.z_col_width), x_header_line);
+    
+    let mut file = BufWriter::new(File::create(path)?);
+    writeln!(file, "{}", header)?;
+    write!(file, "{}", x_header)?;
+    for line in lines {
+        write!(file, "{}", line)?;
+    }
+    
+    Ok(path.to_path_buf())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,7 +122,7 @@ mod tests {
             center_block_z: 0,
             radius: 2,
             mode: Mode::Check,
-            memory_limit_gib: None,
+            memory_limit_gib: 0.0,
             pattern: None,
             match_target: 0,
             count_shape: crate::config::CountShape::Square,
@@ -87,6 +133,9 @@ mod tests {
             output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
+            secure_mode: false,
+            challenge_code: None,
+            progress_update_interval: 1.0,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();
@@ -105,7 +154,7 @@ mod tests {
             center_block_z: 0,
             radius: 2,
             mode: Mode::Check,
-            memory_limit_gib: None,
+            memory_limit_gib: 0.0,
             pattern: None,
             match_target: 0,
             count_shape: crate::config::CountShape::Square,
@@ -116,6 +165,9 @@ mod tests {
             output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
+            secure_mode: false,
+            challenge_code: None,
+            progress_update_interval: 1.0,
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();

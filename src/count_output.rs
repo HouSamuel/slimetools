@@ -40,8 +40,10 @@ pub fn output_count_file(
     writeln!(file, "目标数量: {}", config.count_target)?;
     writeln!(file, "找到数量: {}", results.len())?;
     
-    if let Some(limit) = config.memory_limit_gib {
-        writeln!(file, "内存限制: {} GiB", limit)?;
+    if config.memory_limit_gib > 0.0 {
+        writeln!(file, "内存限制: {} GiB", config.memory_limit_gib)?;
+    } else {
+        writeln!(file, "内存限制: 无限制")?;
     }
     
     writeln!(file)?;

@@ -1,5 +1,6 @@
 use crate::config::CountShape;
 use crate::preprocess::PreprocessedData;
+use std::sync::atomic::AtomicUsize;
 
 pub struct CountResult {
     pub block_x: i32,
@@ -81,5 +82,169 @@ pub fn count_slime_chunks(
     
     results.truncate(target);
     
+    results
+}
+
+pub fn count_slime_chunks_chunk(
+    prep: &PreprocessedData,
+    chunk: &[u8],
+    chunk_z_start: usize,
+    chunk_z_end: usize,
+    shape: CountShape,
+    size: i32,
+) -> Vec<CountResult> {
+    let half_size = size / 2;
+    let size_sq = (size as f64 / 2.0).powi(2) as i64;
+    
+    let mut results = Vec::new();
+    
+    let start_block_z = prep.min_block_z + chunk_z_start as i32;
+    let end_block_z = prep.min_block_z + chunk_z_end as i32 - 1;
+    
+    for block_z in start_block_z..=end_block_z {
+        for block_x in prep.min_block_x..=prep.max_block_x {
+            let mut count = 0;
+            
+            for dz in -half_size..=half_size {
+                for dx in -half_size..=half_size {
+                    let check_z = block_z + dz;
+                    let check_x = block_x + dx;
+                    
+                    let in_shape = match shape {
+                        CountShape::Square => true,
+                        CountShape::Circle => {
+                            let dist_sq = (dx as i64).pow(2) + (dz as i64).pow(2);
+                            dist_sq <= size_sq
+                        }
+                    };
+                    
+                    if !in_shape {
+                        continue;
+                    }
+                    
+                    if check_x < prep.min_block_x || check_x > prep.max_block_x ||
+                       check_z < prep.min_block_z || check_z > prep.max_block_z {
+                        continue;
+                    }
+                    
+                    let x_idx = (check_x - prep.min_block_x) as usize;
+                    let z_idx = (check_z - prep.min_block_z) as usize;
+                    
+                    let chunk_z_idx = z_idx - chunk_z_start;
+                    
+                    if chunk_z_idx >= (chunk_z_end - chunk_z_start) {
+                        continue;
+                    }
+                    
+                    if chunk[chunk_z_idx * prep.x_count + x_idx] == 1 {
+                        count += 1;
+                    }
+                }
+            }
+            
+            if count > 0 {
+                let dx = (block_x - prep.center_block_x) as i64;
+                let dz = (block_z - prep.center_block_z) as i64;
+                let distance_sq = dx * dx + dz * dz;
+                
+                results.push(CountResult {
+                    block_x,
+                    block_z,
+                    world_x: block_x * 16,
+                    world_z: block_z * 16,
+                    slime_count: count,
+                    distance_sq,
+                });
+            }
+        }
+    }
+    
+    results
+}
+
+pub fn count_slime_chunks_chunk_with_progress(
+    prep: &PreprocessedData,
+    chunk: &[u8],
+    chunk_z_start: usize,
+    chunk_z_end: usize,
+    shape: CountShape,
+    size: i32,
+    progress: &AtomicUsize,
+) -> Vec<CountResult> {
+    let half_size = size / 2;
+    let size_sq = (size as f64 / 2.0).powi(2) as i64;
+    
+    let mut results = Vec::new();
+    
+    let start_block_z = prep.min_block_z + chunk_z_start as i32;
+    let end_block_z = prep.min_block_z + chunk_z_end as i32 - 1;
+    
+    let total_iterations = ((end_block_z - start_block_z + 1) as usize) * ((prep.max_block_x - prep.min_block_x + 1) as usize);
+    let mut iteration = 0;
+    
+    for block_z in start_block_z..=end_block_z {
+        for block_x in prep.min_block_x..=prep.max_block_x {
+            iteration += 1;
+            if iteration % 100 == 0 || iteration == total_iterations {
+                progress.store(iteration, std::sync::atomic::Ordering::Relaxed);
+            }
+            
+            let mut count = 0;
+            
+            for dz in -half_size..=half_size {
+                for dx in -half_size..=half_size {
+                    let check_z = block_z + dz;
+                    let check_x = block_x + dx;
+                    
+                    let in_shape = match shape {
+                        CountShape::Square => true,
+                        CountShape::Circle => {
+                            let dist_sq = (dx as i64).pow(2) + (dz as i64).pow(2);
+                            dist_sq <= size_sq
+                        }
+                    };
+                    
+                    if !in_shape {
+                        continue;
+                    }
+                    
+                    if check_x < prep.min_block_x || check_x > prep.max_block_x ||
+                       check_z < prep.min_block_z || check_z > prep.max_block_z {
+                        continue;
+                    }
+                    
+                    let x_idx = (check_x - prep.min_block_x) as usize;
+                    let z_idx = (check_z - prep.min_block_z) as usize;
+                    
+                    let chunk_z_idx = z_idx - chunk_z_start;
+                    
+                    if chunk_z_idx >= (chunk_z_end - chunk_z_start) {
+                        continue;
+                    }
+                    
+                    if chunk[chunk_z_idx * prep.x_count + x_idx] == 1 {
+                        count += 1;
+                    }
+                }
+            }
+            
+            if count > 0 {
+                let dx = (block_x - prep.center_block_x) as i64;
+                let dz = (block_z - prep.center_block_z) as i64;
+                let distance_sq = dx * dx + dz * dz;
+                
+                results.push(CountResult {
+                    block_x,
+                    block_z,
+                    world_x: block_x * 16,
+                    world_z: block_z * 16,
+                    slime_count: count,
+                    distance_sq,
+                });
+            }
+        }
+    }
+    
+    progress.store(total_iterations, std::sync::atomic::Ordering::Relaxed);
     results
 }
