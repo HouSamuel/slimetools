@@ -98,7 +98,7 @@ pub const CONFIG: Config = Config {
     center_block_z: 0,
     radius: 100000,
     mode: Mode::Match,
-    memory_limit_gib: None,
+    memory_limit_gib: 4,
     
     // === Match 模式专属配置 ===
     pattern: Some(PATTERN_ROWS),

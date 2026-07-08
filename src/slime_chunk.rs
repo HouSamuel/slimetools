@@ -5,10 +5,10 @@ const C_Z1: i64 = 389711;
 const BOUND: i64 = 10;
 const TARGET: i64 = 0;
 
-const LCG_MULT: u64 = 0x5DEECE66D;
-const LCG_ADD: u64 = 0xB;
-const LCG_MASK: u64 = (1 << 48) - 1;
-const XOR_SEED: u64 = 0x5DEECE66D;
+const LCG_MULT: i64 = 0x5DEECE66D;
+const LCG_ADD: i64 = 0xB;
+const LCG_MASK: i64 = (1i64 << 48) - 1;
+const XOR_SEED: i64 = 0x5DEECE66D;
 
 #[inline(always)]
 pub fn compute_fx(x: i32) -> i64 {
@@ -24,8 +24,9 @@ pub fn compute_fz(z: i32) -> i64 {
 
 #[inline(always)]
 pub fn is_slime_chunk_fast(fx: i64, fz: i64, seed: i64) -> bool {
-    let combined = ((seed as u64).wrapping_add(fx as u64).wrapping_add(fz as u64) ^ XOR_SEED) & LCG_MASK;
-    let next_seed = combined.wrapping_mul(LCG_MULT).wrapping_add(LCG_ADD) & LCG_MASK;
+    let combined = seed ^ fx ^ fz;
+    let lcg_seed = (combined ^ XOR_SEED) & LCG_MASK;
+    let next_seed = lcg_seed.wrapping_mul(LCG_MULT).wrapping_add(LCG_ADD) & LCG_MASK;
     let bits = (next_seed >> 17) as i64;
     (bits % BOUND) == TARGET
 }
@@ -58,5 +59,17 @@ mod tests {
         let fx = compute_fx(100);
         let fz = compute_fz(200);
         is_slime_chunk_fast(fx, fz, seed);
+    }
+
+    #[test]
+    fn test_is_slime_chunk_java_equivalent() {
+        let seed = 20260627i64;
+        
+        assert_eq!(is_slime_chunk_fast(compute_fx(-37), compute_fz(8), seed), true);
+        assert_eq!(is_slime_chunk_fast(compute_fx(-36), compute_fz(8), seed), false);
+        assert_eq!(is_slime_chunk_fast(compute_fx(-35), compute_fz(8), seed), false);
+        assert_eq!(is_slime_chunk_fast(compute_fx(-37), compute_fz(9), seed), false);
+        assert_eq!(is_slime_chunk_fast(compute_fx(-36), compute_fz(9), seed), false);
+        assert_eq!(is_slime_chunk_fast(compute_fx(-35), compute_fz(9), seed), false);
     }
 }
