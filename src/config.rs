@@ -107,9 +107,9 @@ pub const CONFIG: Config = Config {
     world_seed: 20260627,
     center_block_x: 0,
     center_block_z: 0,
-    radius: 100,
-    mode: Mode::Check,
-    memory_limit_gib: 4.0,
+    radius: 50000,
+    mode: Mode::Match,
+    memory_limit_gib: 6.0,
     
     // === Match 模式专属配置 ===
     pattern: Some(PATTERN_ROWS),
@@ -121,7 +121,7 @@ pub const CONFIG: Config = Config {
     count_target: 10,
     
     // === 输出配置 ===
-    output_map: true,
+    output_map: false,
     output_match: true,
     output_count: true,
     output_log: true,
