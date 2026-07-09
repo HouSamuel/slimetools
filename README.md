@@ -35,10 +35,11 @@ pub const CONFIG: Config = Config {
     terminal_mode: TerminalMode::Basic,
     
     // 安全模式，防止生成太大的 map 文件
-    secure_mode: false,
+    secure_mode: true,
     challenge_code: None,
+    //challenge_code: Some("xxx"),
     
-    progress_update_interval: 1.0,
+    progress_update_interval: 1.0,//进度条百分比更新速度
 };
 ```
 
