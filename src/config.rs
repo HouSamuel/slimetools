@@ -108,7 +108,7 @@ pub const CONFIG: Config = Config {
     center_block_x: 0,
     center_block_z: 0,
     radius: 50000,
-    mode: Mode::Match,
+    mode: Mode::Count,
     memory_limit_gib: 6.0,
     
     // === Match 模式专属配置 ===
@@ -117,7 +117,7 @@ pub const CONFIG: Config = Config {
     
     // === Count 模式专属配置 ===
     count_shape: CountShape::Square,
-    count_size: 5,
+    count_size: 17,//这里是正方形边长
     count_target: 10,
     
     // === 输出配置 ===

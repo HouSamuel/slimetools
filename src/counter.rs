@@ -157,8 +157,18 @@ pub fn count_slime_chunks_chunk(
                         continue;
                     }
                     
+                    if check_x < prep.min_block_x || check_x > prep.max_block_x ||
+                       check_z < prep.min_block_z || check_z > prep.max_block_z {
+                        continue;
+                    }
+                    
                     let x_idx = (check_x - prep.min_block_x) as usize;
                     let z_idx = (check_z - prep.min_block_z) as usize;
+                    
+                    if z_idx < chunk_z_start || z_idx >= chunk_z_end {
+                        continue;
+                    }
+                    
                     let chunk_z_idx = z_idx - chunk_z_start;
                     
                     if chunk[chunk_z_idx * prep.x_count + x_idx] == 1 {
@@ -252,8 +262,18 @@ pub fn count_slime_chunks_chunk_with_progress(
                         continue;
                     }
                     
+                    if check_x < prep.min_block_x || check_x > prep.max_block_x ||
+                       check_z < prep.min_block_z || check_z > prep.max_block_z {
+                        continue;
+                    }
+                    
                     let x_idx = (check_x - prep.min_block_x) as usize;
                     let z_idx = (check_z - prep.min_block_z) as usize;
+                    
+                    if z_idx < chunk_z_start || z_idx >= chunk_z_end {
+                        continue;
+                    }
+                    
                     let chunk_z_idx = z_idx - chunk_z_start;
                     
                     if chunk[chunk_z_idx * prep.x_count + x_idx] == 1 {
