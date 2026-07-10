@@ -1,4 +1,4 @@
-use crate::config::{Config, Mode, CountShape};
+use crate::config::{Config, Mode};
 use crate::preprocess::PreprocessedData;
 
 pub fn build_info(config: &Config, prep: &PreprocessedData) -> String {
@@ -42,15 +42,6 @@ pub fn build_info(config: &Config, prep: &PreprocessedData) -> String {
                 }
                 info.push_str(&format!("匹配目标: {}\n", config.match_target));
             }
-        }
-        Mode::Count => {
-            info.push_str("模式: Count\n");
-            info.push_str(&format!("计数形状: {}\n", match config.count_shape {
-                CountShape::Square => "正方形",
-                CountShape::Circle => "圆形",
-            }));
-            info.push_str(&format!("区域尺寸: {}\n", config.count_size));
-            info.push_str(&format!("目标数量: {}\n", config.count_target));
         }
     }
     

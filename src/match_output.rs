@@ -86,12 +86,8 @@ mod tests {
             memory_limit_gib: 0.0,
             pattern: Some(&[&[2, 2], &[2, 2]]),
             match_target: 0,
-            count_shape: crate::config::CountShape::Square,
-            count_size: 5,
-            count_target: 10,
             output_map: false,
             output_match: true,
-            output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
             secure_mode: false,
@@ -100,7 +96,7 @@ mod tests {
         };
         
         let prep = crate::preprocess::preprocess(&config).unwrap();
-        let grid = crate::grid::generate_grid(&config, &prep);
+        let grid = crate::check::generate_grid(&config, &prep);
         let matches = crate::matcher::find_matches(&config, &prep, &grid);
         
         let path = output_match_file(&config, &prep, &matches)?;

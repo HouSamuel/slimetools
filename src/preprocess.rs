@@ -117,14 +117,6 @@ fn validate(config: &Config) -> Result<(), String> {
                 }
             }
         }
-        Mode::Count => {
-            if config.count_size <= 0 {
-                return Err("计数区域尺寸必须大于0".to_string());
-            }
-            if config.count_target == 0 {
-                return Err("计数目标数量必须大于0".to_string());
-            }
-        }
         Mode::Check => {}
     }
     
@@ -314,12 +306,8 @@ mod tests {
             memory_limit_gib: 0.0,
             pattern: None,
             match_target: 0,
-            count_shape: crate::config::CountShape::Square,
-            count_size: 5,
-            count_target: 10,
             output_map: true,
             output_match: false,
-            output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
             secure_mode: false,
@@ -351,12 +339,8 @@ mod tests {
             memory_limit_gib: 0.0,
             pattern: None,
             match_target: 0,
-            count_shape: crate::config::CountShape::Square,
-            count_size: 5,
-            count_target: 10,
             output_map: true,
             output_match: false,
-            output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
             secure_mode: false,
@@ -385,12 +369,8 @@ mod tests {
             memory_limit_gib: 0.0,
             pattern: None,
             match_target: 0,
-            count_shape: crate::config::CountShape::Square,
-            count_size: 5,
-            count_target: 10,
             output_map: true,
             output_match: false,
-            output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
             secure_mode: false,
@@ -427,12 +407,8 @@ mod tests {
             memory_limit_gib: 0.0,
             pattern: Some(&[&[1, 1], &[1, 1]]),
             match_target: 0,
-            count_shape: crate::config::CountShape::Square,
-            count_size: 5,
-            count_target: 10,
             output_map: true,
             output_match: true,
-            output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
             secure_mode: false,
@@ -454,12 +430,8 @@ mod tests {
             memory_limit_gib: 0.0,
             pattern: Some(&[&[1, 3], &[1, 1]]),
             match_target: 0,
-            count_shape: crate::config::CountShape::Square,
-            count_size: 5,
-            count_target: 10,
             output_map: true,
             output_match: true,
-            output_count: false,
             output_log: true,
             terminal_mode: TerminalMode::Full,
             secure_mode: false,
