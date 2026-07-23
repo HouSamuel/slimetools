@@ -1,5 +1,5 @@
 /// 主程序：仅作为数据中转站，不执行任何计算或格式化
-mod slime_lib;
+pub mod slime_lib;
 mod preprocess;
 mod matcher;
 mod matcher_output;
@@ -13,6 +13,10 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use preprocess::{Preprocessed, OutputMode};
 
+#[test]
+fn test_slime() {
+    assert_eq!(slime_lib::is_slime_chunk(1234567890, 194823, 491832), true);
+}
 fn main() -> Result<()> {
     let mut timer = timer::Timer::new();
 

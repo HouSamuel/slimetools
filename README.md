@@ -240,3 +240,27 @@ main.rs (中转站)
 ---
 
 **Happy slime hunting! 🟢**
+
+** 测试用例 **
+
+```shell
+# 1. 单个区块判定 (Rust)
+cargo test --test slime_test -- --nocapture -- check 1234567890 0 0
+
+# 2. 单个区块判定 (Java)
+javac tests/check.java
+java -cp tests check 1234567890 0 0
+
+# 3. 生成随机测试数据
+cargo test --test slime_test -- --nocapture -- generate 100 tests/chunks.txt
+
+# 4. 批量判定 (Rust) - 输出01字符串
+cargo test --test slime_test -- --nocapture -- batch tests/chunks.txt
+
+# 5. 批量判定 (Java) - 输出01字符串
+javac tests/batch.java
+java -cp tests batch tests/chunks.txt
+
+# 6. 对比测试 - 同时运行Rust和Java，输出01并对比
+cargo test --test slime_test -- --nocapture -- compare tests/chunks.txt
+```
