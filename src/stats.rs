@@ -4,13 +4,13 @@ use crate::timer::StageTimes;
 /// 统计数据：包含计时和计算结果
 pub struct Stats {
     times: StageTimes,      // 各阶段耗时
-    total_blocks: usize,    // 扫描区块总数
+    total_blocks: u64,      // 扫描区块总数（使用 u64 避免溢出）
     match_count: usize,     // 匹配结果数
 }
 
 impl Stats {
     /// 创建统计对象
-    pub fn new(times: StageTimes, total_blocks: usize, match_count: usize) -> Self {
+    pub fn new(times: StageTimes, total_blocks: u64, match_count: usize) -> Self {
         Stats {
             times,
             total_blocks,

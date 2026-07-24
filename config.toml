@@ -3,10 +3,10 @@ center_x = 0
 center_z = 0
 radius = 100000
 pattern = [
-    [1, 1, 1],
-    [1, 1, 1],
-    [1, 1, 1]
+    [1,1,1],
+    [1,1,1],
+    [1,1,1]
 ]
-limit = 0
+limit = 100
 output_mode = "both"
 output_path = "matches.txt"

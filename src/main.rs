@@ -1,5 +1,6 @@
 /// 主程序：仅作为数据中转站，不执行任何计算或格式化
 pub mod slime_lib;
+mod pattern;
 mod preprocess;
 mod matcher;
 mod matcher_output;
@@ -29,7 +30,8 @@ fn main() -> Result<()> {
     // ========== 阶段2：计算 ==========
     timer.start_stage();
     // 发送预处理结果到计算模块，接收匹配结果和统计数据
-    let (matches, total_blocks) = matcher::find_matches(&pre);
+    // 使用并行版本（SWAR优化 + 多线程）
+    let (matches, total_blocks) = matcher::find_matches_parallel(&pre);
     timer.end_calculation();
 
     // ========== 阶段3：格式化 ==========

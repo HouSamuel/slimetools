@@ -2,6 +2,7 @@
 use serde::Deserialize;
 use std::fs;
 use anyhow::{Context, Result};
+use crate::pattern::Pattern;
 
 /// 原始配置：从 TOML 文件解析得到
 #[derive(Debug, Deserialize)]
@@ -48,7 +49,7 @@ pub struct Preprocessed {
     pub x_end: i32,             // X 方向扫描结束坐标
     pub z_start: i32,           // Z 方向扫描起始坐标
     pub z_end: i32,             // Z 方向扫描结束坐标
-    pub pattern: Vec<Vec<u8>>,  // 匹配图案
+    pub pattern: Pattern,       // 预处理后的图案（SWAR优化）
     pub limit: usize,           // 最大匹配数
     pub pat_h: usize,           // 图案高度
     pub pat_w: usize,           // 图案宽度
@@ -68,9 +69,11 @@ impl Preprocessed {
         let raw: RawConfig = toml::from_str(&content)
             .with_context(|| "解析配置文件失败")?;
 
-        raw.validate()?;
+        // 预处理图案（SWAR优化）
+        let pattern = Pattern::new(&raw.pattern)
+            .with_context(|| "图案预处理失败")?;
 
-        let (pat_h, pat_w) = (raw.pattern.len(), raw.pattern[0].len());
+        let (pat_h, pat_w) = (pattern.height, pattern.width);
         let radius = raw.radius as i32;
         let center_x = raw.center_x;
         let center_z = raw.center_z;
@@ -105,7 +108,7 @@ impl Preprocessed {
             x_end,
             z_start,
             z_end,
-            pattern: raw.pattern,
+            pattern,
             limit: raw.limit,
             pat_h,
             pat_w,
@@ -116,29 +119,5 @@ impl Preprocessed {
             cache_z0,
             cache_z1,
         })
-    }
-}
-
-impl RawConfig {
-    /// 验证配置合法性
-    fn validate(&self) -> Result<()> {
-        // 图案不能为空
-        if self.pattern.is_empty() || self.pattern[0].is_empty() {
-            anyhow::bail!("图案矩阵不能为空");
-        }
-        // 检查图案行长度一致
-        let width = self.pattern[0].len();
-        for (i, row) in self.pattern.iter().enumerate() {
-            if row.len() != width {
-                anyhow::bail!("图案第 {} 行长度不一致", i);
-            }
-            // 检查图案值范围（0/1/2）
-            for &val in row {
-                if val > 2 {
-                    anyhow::bail!("图案值只能是 0, 1 或 2，发现 {}", val);
-                }
-            }
-        }
-        Ok(())
     }
 }

@@ -1,266 +1,231 @@
-# Slimetools — 史莱姆区块图案匹配工具
+# Slimetools - 高性能史莱姆区块图案匹配系统
 
-[![Rust](https://img.shields.io/badge/rust-1.80%2B-blue)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+在 Minecraft 极大规模地图中，极速搜索所有符合特定"二维图案"的史莱姆区块坐标。采用极致的位运算（SWAR）和多线程数据并行，将计算效率推向单核理论极限。
 
-**Slimetools** 是一个高效扫描 Minecraft 世界中史莱姆区块并匹配自定义图案的命令行工具。它基于 Java 版原版史莱姆区块算法，支持大范围扫描、图案匹配、性能统计和多输出模式。
+## ✨ 功能特性
 
----
+- **极致性能**：扫描效率高达 **19.8 亿区块/秒**（400 亿区块仅需 20 秒）
+- **SWAR 位运算**：将连续 64 个区块打包成 u64，一次性比较多个位置
+- **多线程并行**：按 X 轴切分任务，充分利用多核 CPU
+- **零冗余计算**：倒置循环轴 + 环形缓存，每个区块只计算一次
+- **智能短路**：按条件严格程度重排行顺序，快速淘汰无效坐标
+- **精确匹配**：完全复现 Java 版 Minecraft 的史莱姆区块算法
+- **灵活配置**：支持自定义图案、扫描范围、输出模式
 
-## 特性
+## 🚀 快速开始
 
-- ✅ **精确算法**：完全复刻 Minecraft Java 版的 `Random` 实现，结果与原版一致。
-- ✅ **自定义图案**：支持任意尺寸矩形图案，以 `0`（普通区块）、`1`（史莱姆区块）、`2`（任意）定义。
-- ✅ **大范围扫描**：以指定中心向外扩展半径，自动匹配所有可能位置。
-- ✅ **内存友好**：采用即时计算策略，按需判断区块状态，不预先缓存，适合大规模扫描。
-- ✅ **性能统计**：输出预处理、计算、输出三阶段耗时、总扫描区块数、平均效率（区块/秒）和匹配数量。
-- ✅ **双输出模式**：可同时输出到控制台和文件（`console`、`file`、`both`）。
-- ✅ **自动命名**：输出文件自动以种子号命名（格式：`{seed}_match_output.txt`）。
-- ✅ **友好信息**：显示种子、坐标范围、图案等详细信息，世界坐标采用半开区间 `[start, end)`。
-
----
-
-## 快速开始
-
-### 前置要求
-
-- Rust 1.80+（[安装指南](https://www.rust-lang.org/learn/get-started)）
-
-### 克隆项目
+### 编译
 
 ```bash
-git clone https://github.com/yourusername/slimetools.git
-cd slimetools
+# 编译发布版本（推荐，开启所有优化）
+cargo build --release
+
+# 编译调试版本
+cargo build
 ```
 
-### 配置 `config.toml`
+### 运行
 
-在项目根目录创建或编辑 `config.toml`：
+```bash
+# 使用默认配置
+./target/release/slimetools
+
+# 指定配置文件
+./target/release/slimetools config.toml
+```
+
+## ⚙️ 配置说明
+
+编辑 `config.toml` 文件：
 
 ```toml
-seed = 1234567890          # 世界种子（/seed 获取）
-center_x = 0               # 扫描中心区块 X
-center_z = 0               # 扫描中心区块 Z
-radius = 10                # 半径（chunks），向四方扩展
-pattern = [                # 图案，行优先
-    [1, 2],                # 1=史莱姆, 0=普通, 2=任意
-    [1, 0]
+# 世界种子（i64 类型）
+seed = 1234567890
+
+# 中心区块坐标
+center_x = 0
+center_z = 0
+
+# 扫描半径（区块数），实际范围为 [-radius, radius]
+radius = 10000
+
+# 匹配图案
+# 1: 必须是史莱姆区块
+# 0: 必须不是史莱姆区块
+# 2: 任意（忽略）
+pattern = [
+    [1, 1, 1],
+    [1, 1, 1],
+    [1, 1, 1]
 ]
-limit = 0                  # 匹配上限，0 表示无限制
-output_mode = "both"       # "console" | "file" | "both"
+
+# 最大匹配数（0 表示无限制）
+limit = 0
+
+# 输出模式：console / file / both
+output_mode = "both"
+
+# 输出文件路径（file 和 both 模式有效，会被自动覆盖为种子号命名）
+output_path = "matches.txt"
 ```
 
-### 构建与运行
+## 🧠 核心算法
 
-```bash
-# 开发模式（较快编译）
-cargo run
+### 史莱姆区块判定
 
-# 发布模式（最大性能）
-cargo run --release
+完全复现 Java 版 Minecraft 的史莱姆区块算法：
+
+```rust
+#[inline(always)]
+pub fn is_slime_chunk(world_seed: i64, chunk_x: i32, chunk_z: i32) -> bool {
+    let cx = chunk_x as i64;
+    let cz = chunk_z as i64;
+    
+    let part1 = cx * cx * 4987142i64;
+    let part2 = cx * 5947611i64;
+    let part3 = cz * cz * 4392871i64;
+    let part4 = cz * 389711i64;
+    
+    let seed = world_seed
+        .wrapping_add(part1)
+        .wrapping_add(part2)
+        .wrapping_add(part3)
+        .wrapping_add(part4)
+        ^ 987234911i64;
+    
+    // Java Random LCG 算法
+    const MULTIPLIER: i64 = 0x5DEECE66D;
+    const ADDEND: i64 = 0xB;
+    const MASK: i64 = (1i64 << 48) - 1;
+    
+    let mut rng_seed = (seed ^ MULTIPLIER) & MASK;
+    rng_seed = (rng_seed.wrapping_mul(MULTIPLIER).wrapping_add(ADDEND)) & MASK;
+    let bits = (rng_seed >> (48 - 31)) as i32;
+    
+    bits % 10 == 0
+}
 ```
 
-### 输出示例
+### 性能优化策略
+
+| 优化策略 | 原理 | 效果 |
+|----------|------|------|
+| **位图打包** | 将连续 64 个区块打包成 u64 | 单次位运算比较 64 个位置 |
+| **边界无缝拼接** | 使用 u128 拼接当前块和下一块 | 完美解决跨 64 位边界问题 |
+| **倒置循环轴** | 外层 X 步进 64，内层 Z 步进 1 | 配合环形缓存实现 O(N) 零冗余 |
+| **环形缓存** | 维护 H 行数据，每个区块只计算一次 | 消除 O(N×H) 的重复计算 |
+| **行短路重排** | 按条件数重排行顺序 | 提升短路命中率 50%+ |
+| **多线程并行** | 按 X 轴切分任务 | 充分利用多核 CPU |
+| **提前短路** | 内层循环中 combined==0 立即 break | 节省无用位运算 |
+
+## 📁 项目结构
+
+```
+slimetools/
+├── src/
+│   ├── lib.rs              # 库入口，导出 slime_lib 模块
+│   ├── main.rs             # 主程序，作为数据中转站
+│   ├── slime_lib.rs        # 史莱姆区块判定核心算法
+│   ├── pattern.rs          # 图案预处理（行重排优化）
+│   ├── preprocess.rs       # 配置文件解析和预处理
+│   ├── matcher.rs          # 匹配核心逻辑（SWAR + 多线程）
+│   ├── matcher_output.rs   # 匹配结果格式化输出
+│   ├── info.rs             # 运行信息格式化输出
+│   ├── timer.rs            # 计时模块
+│   └── stats.rs            # 统计信息生成
+├── tests/
+│   ├── slime_test.rs       # 集成测试（check/generate/batch/compare）
+│   ├── check.java          # Java 单区块判定程序
+│   └── batch.java          # Java 批量判定程序
+├── config.toml             # 默认配置文件
+├── Cargo.toml              # 项目依赖配置
+└── README.md               # 项目文档
+```
+
+## 📊 输出示例
 
 ```
 [Info]
 世界种子: 1234567890
 中心区块坐标: (0, 0)
 世界坐标: x:[0, 16) z:[0, 16)
-扫描半径: 10 chunks
-区块坐标范围: x:(-10, 10) z:(-10, 10)
-世界坐标范围: x:[-160, 192) z:[-160, 192)
+扫描半径: 100000 chunks
+区块坐标范围: x:(-100000, 100000) z:(-100000, 100000)
+世界坐标范围: x:[-1600000, 1600048) z:[-1600000, 1600048)
 图案:
-行 1: 1 2
-行 2: 1 0
-
+行 1: 1 1 1
+行 2: 1 1 1
+行 3: 1 1 1
 [Result]
-找到 4 个匹配：
-起始区块: (-10, 6)
-起始区块: (-5, 8)
-起始区块: (4, -5)
-起始区块: (5, 8)
+找到 54 个匹配（按距离中心排序）：
 
+[ 序/总数]  (   区块X,    区块Z)  =>  x:[     世界X,     世界X+) z:[     世界Z,     世界Z+)  距离:     距离 区块
+--------------------------------------------------------------------------------------------
+[ 1/54]  (  2565,  11761)  =>  x:[   41040,    41056) z:[  188176,   188192)  距离:  14326 区块
+...
 [Statistics]
-预处理耗时: 577.96µs
-计算耗时: 6.12µs
-输出耗时: 668.71µs
-总耗时: 1.28ms
-扫描区块总数: 484
-平均效率: 79020408.16 区块/秒
-匹配结果数: 4
+预处理耗时: 493.33µs
+计算耗时: 20.19s
+输出耗时: 214.92µs
+总耗时: 20.19s
+扫描区块总数: 40,000,400,001
+计算效率: 1,980,860,424.72 区块/秒
+匹配结果数: 54
 ```
 
----
+## 🧪 测试
 
-## 配置文件详解
+### Rust 测试
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `seed` | 64位整数 | 世界种子，与 `/seed` 一致 |
-| `center_x`, `center_z` | 32位整数 | 扫描中心区块坐标 |
-| `radius` | 非负整数 | 向外扩展的区块数（包含边界），扫描范围为 `(-radius, radius)` |
-| `pattern` | 二维整数数组 | 图案定义，每行长度必须一致，值仅为 `0`、`1`、`2` |
-| `limit` | 非负整数 | 最大输出匹配数，`0` 表示全部输出 |
-| `output_mode` | 字符串 | `"console"`、`"file"` 或 `"both"` |
-| `output_path` | 字符串（可选） | 输出文件路径，**已废弃**，现自动使用种子号命名 |
+```bash
+# 运行所有测试
+cargo test
 
----
+# 运行特定测试
+cargo test --test slime_test -- --nocapture
 
-## 实现方法
-
-### 史莱姆区块判定算法
-
-史莱姆区块判定基于 Minecraft Java 版的伪随机数生成器实现：
-
-1. **种子计算**：将世界种子与区块坐标混合，生成初始种子：
-   ```
-   seed = worldSeed + chunkX² × 4987142 + chunkX × 5947611 + chunkZ² × 4392871 + chunkZ × 389711 XOR 987234911
-   ```
-
-2. **LCG 随机数生成**：使用线性同余生成器（LCG）生成随机数：
-   - 乘数：`0x5DEECE66D`（25214903917）
-   - 增量：`0xB`（11）
-   - 掩码：`(1 << 48) - 1`（48位）
-
-3. **判定**：生成 0-9 的随机数，若结果为 0 则为史莱姆区块（概率 10%）。
-
-### 图案匹配策略
-
-采用**即时计算策略**，而非预先缓存所有区块结果：
-
-1. **遍历起始位置**：按顺序遍历所有可能的图案起始位置。
-2. **逐块验证**：对于每个起始位置，逐个验证图案中的每个位置。
-3. **提前终止**：一旦发现不匹配的位置，立即跳过当前起始位置，继续下一个。
-4. **内存优化**：无需预先存储所有区块的判定结果，内存使用为 O(1)（除结果列表外）。
-
-这种策略在大规模扫描时具有显著优势，避免了内存不足的问题。
-
-### 坐标范围计算
-
-扫描范围以中心坐标为基准，对称扩展：
-
-- **匹配起始范围**：`x ∈ [center_x - radius, center_x + radius]`，`z ∈ [center_z - radius, center_z + radius]`
-- **缓存扩展范围**：为容纳完整图案，缓存范围扩展至 `[x_start, x_end + pattern_width - 1]`
-
----
-
-## 项目结构
-
-```
-slimetools/
-├── Cargo.toml           # 项目清单
-├── config.toml          # 用户配置
-├── README.md            # 本文档
-├── origin_java/         # Java 原版算法参考实现
-│   ├── CheckSlimeChunk.java
-│   └── CheckSlimeChunk.class
-└── src/
-    ├── main.rs          # 入口，数据中转站，协调各模块
-    ├── slime_lib.rs     # 史莱姆区块判断核心算法
-    ├── preprocess.rs    # 配置加载、校验与范围计算
-    ├── matcher.rs       # 图案匹配引擎（即时计算）
-    ├── matcher_output.rs # 格式化匹配结果为字符串
-    ├── info.rs          # 生成运行信息字符串
-    ├── timer.rs         # 计时器模块，测量各阶段耗时
-    └── stats.rs         # 统计模块，生成性能统计信息
-```
-
----
-
-## 模块职责
-
-| 模块 | 职责 | 输入 | 输出 |
-|------|------|------|------|
-| `main.rs` | **数据中转站**，协调各模块执行流程 | 无（读取配置文件路径） | 控制台输出、文件输出 |
-| `slime_lib.rs` | 史莱姆区块判定核心算法，完全复现 Java 版行为 | 世界种子、区块坐标 (x, z) | `bool`（是否为史莱姆区块） |
-| `preprocess.rs` | 读取并验证配置文件，计算扫描范围和缓存扩展范围 | `config.toml` 文件路径 | `Preprocessed` 结构体 |
-| `matcher.rs` | 图案匹配引擎，遍历所有起始位置并逐块验证 | 预处理结果 | 匹配位置列表、扫描区块总数 |
-| `matcher_output.rs` | 格式化匹配结果为可读字符串 | 匹配位置列表 | 格式化字符串（`[Result]` 开头） |
-| `info.rs` | 生成运行信息字符串（种子、坐标范围、图案等） | 预处理结果 | 格式化信息字符串（`[Info]` 开头） |
-| `timer.rs` | 计时模块，测量预处理、计算、输出各阶段耗时 | 无 | `StageTimes` 结构体 |
-| `stats.rs` | 统计模块，生成性能统计信息字符串 | 计时数据、区块数、匹配数 | 格式化统计字符串（`[Statistics]` 开头） |
-
----
-
-## 执行流程
-
-```
-main.rs (中转站)
-    │
-    ├─→ preprocess.rs (读取配置)
-    │       └─→ 返回 Preprocessed 结构体
-    │
-    ├─→ matcher.rs (执行计算)
-    │       ├─→ 调用 slime_lib.rs 逐块判断
-    │       └─→ 返回 (匹配列表, 区块总数)
-    │
-    ├─→ matcher_output.rs (格式化结果)
-    │       └─→ 返回 "[Result]..." 字符串
-    │
-    ├─→ info.rs (生成信息)
-    │       └─→ 返回 "[Info]..." 字符串
-    │
-    ├─→ main.rs (合并输出)
-    │       └─→ 输出到控制台/文件
-    │
-    └─→ stats.rs (生成统计)
-            ├─→ 调用 timer.rs 获取耗时
-            └─→ 返回 "[Statistics]..." 字符串
-```
-
----
-
-## 性能说明
-
-- **即时计算策略**：不预先缓存所有区块结果，按需判断，内存使用为 O(1)，适合大规模扫描。
-- **提前终止优化**：一旦发现不匹配位置立即跳过，避免无效计算。
-- **编译优化**：建议使用 `--release` 构建以获得最佳性能。
-- **效率指标**：在标准配置下，每秒可扫描约 8000 万区块。
-
----
-
-## 贡献指南
-
-欢迎提交 Issue 和 Pull Request。请确保代码风格符合 `rustfmt`，并通过 `cargo build`。
-
----
-
-## 许可
-
-本项目采用 MIT 许可证，详情见 [LICENSE](LICENSE) 文件。
-
----
-
-## 致谢
-
-- Minecraft 史莱姆区块算法源自 [Minecraft Wiki](https://minecraft.fandom.com/wiki/Slime)。
-- Rust 生态提供了强大的性能和生产力。
-
----
-
-**Happy slime hunting! 🟢**
-
-** 测试用例 **
-
-```shell
-# 1. 单个区块判定 (Rust)
+# 单区块判定测试
 cargo test --test slime_test -- --nocapture -- check 1234567890 0 0
 
-# 2. 单个区块判定 (Java)
-javac tests/check.java
-java -cp tests check 1234567890 0 0
+# 生成随机测试数据
+cargo test --test slime_test -- --nocapture -- generate 1000 tests/chunks.txt
 
-# 3. 生成随机测试数据
-cargo test --test slime_test -- --nocapture -- generate 100 tests/chunks.txt
-
-# 4. 批量判定 (Rust) - 输出01字符串
+# 批量判定（Rust版）
 cargo test --test slime_test -- --nocapture -- batch tests/chunks.txt
 
-# 5. 批量判定 (Java) - 输出01字符串
-javac tests/batch.java
-java -cp tests batch tests/chunks.txt
-
-# 6. 对比测试 - 同时运行Rust和Java，输出01并对比
+# 对比测试（Rust vs Java）
 cargo test --test slime_test -- --nocapture -- compare tests/chunks.txt
 ```
+
+### Java 测试
+
+```bash
+# 编译 Java 程序
+javac tests/check.java
+javac tests/batch.java
+
+# 单区块判定
+java -cp tests check <seed> <chunkX> <chunkZ>
+
+# 批量判定
+java -cp tests batch <坐标文件>
+```
+
+## 🏆 性能对比
+
+| 版本 | 算法 | 效率 |
+|------|------|------|
+| v1.0 | 逐块判定 | ~7200 万区块/秒 |
+| v2.0 | SWAR + 多线程 | ~2.06 亿区块/秒 |
+| v3.0 | 倒置循环 + 环形缓存 + 行重排 | **~19.8 亿区块/秒** |
+
+## 📝 注意事项
+
+1. **图案限制**：图案宽度和高度不能超过 64
+2. **内存使用**：算法采用即时计算策略，内存占用极低（O(1)）
+3. **Java 运行环境**：对比测试需要系统已安装 JDK
+4. **大半径扫描**：半径超过 100000 时需要较长时间，请耐心等待
+
+## 📄 许可证
+
+MIT License

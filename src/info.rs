@@ -39,7 +39,7 @@ pub fn generate_info(pre: &Preprocessed) -> String {
 
     // 匹配图案
     s.push_str("图案:\n");
-    for (i, row) in pre.pattern.iter().enumerate() {
+    for (i, row) in pre.pattern.original.iter().enumerate() {
         let row_str: String = row.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(" ");
         s.push_str(&format!("行 {}: {}\n", i + 1, row_str));
     }
