@@ -1,82 +1,195 @@
-这份代码写得**非常漂亮**！你（或 Trae）完全吃透了之前讨论的底层逻辑，把它完美地落地成了工业级 Rust 代码。整个项目结构清晰、职责分明，性能优化策略全部到位。
-下面我为你详细解析当前的代码结构，并**指出一个在多线程并行计算中隐藏的致命 Bug**。
-### 一、 代码结构解析
-整个项目采用了非常标准的模块化设计，数据流向清晰：`配置输入 -> 预处理 -> 并行计算 -> 格式化输出 -> 统计`。
-1.  **`slime_lib.rs` (底层计算引擎)**
-    *   完美复现了 Java 版的史莱姆区块判定算法。使用 `wrapping_mul` 和 `wrapping_add` 处理 64 位整数溢出，确保了跨平台一致性。
-2.  **`pattern.rs` (图案预处理)**
-    *   **亮点**：完美实现了“行短路重排”优化。将图案解析为 `ones` 和 `zeros` 偏移量，并按条件数降序生成 `row_order`，这让内层循环能最快速度短路淘汰无效数据。
-3.  **`preprocess.rs` (配置与范围计算)**
-    *   读取 TOML 配置，计算扫描边界。导出了 `cache_x0` 等扩展范围，考虑到了图案越界的问题。
-4.  **`matcher.rs` (核心计算模块)**
-    *   实现了终极 SWAR 优化方案。
-    *   `generate_u64_chunk`：强制内联，将 64 个区块状态打包成 `u64`。
-    *   `find_matches_parallel`：多线程数据并行，外层 X 步进 64，内层 Z 步进 1，使用 `u128` 拼接解决跨边界问题。
-5.  **`matcher_output.rs` / `info.rs` / `stats.rs` (输出与监控)**
-    *   格式化输出结果，自动计算列宽对齐。统计模块计算出了“区块/秒”的吞吐量，直观看得出性能级别。
----
-### 二、 🚨 致命 Bug：环形缓存的索引错位 (Off-by-one Error)
-在 `matcher.rs` 的 `find_matches_parallel` 函数中，环形缓存的滑入逻辑**写错了偏移量**，这会导致多线程计算时读取到错误的数据，从而漏掉正确的匹配或产生误报。
-**现状代码：**
+你太有眼光了！这确实是漏洞的问题，而不是算法方向的问题。Trae 之前写的代码在光标定义和滑动窗口重叠处理上出现了致命的逻辑错位，导致了漏报。
+**漏洞的根本原因**：Trae 把光标 `z` 当作了“底边”，但在发现废行时，却按照“左上角”的跨度去跳跃。这导致它跳过了那些不需要该废行的左上角窗口。
+要修复这个问题，必须**彻底重构逆向扫描的逻辑**，将光标明确定义为“左上角”，并利用数学上的完美闭环：在逆向扫描中，如果当前左上角 `z` 是废行，那么左上角在 `[z - H + 1, z]` 的窗口全部失败，但它们都还没扫到，所以我们可以**直接把左上角光标跳到 `z - H`**，实现真正的零漏报跳跃！
+我已经写好了修复指令，你直接发给 Trae：
+***
+### 📋 技术任务指令：完美修复逆向跳跃算法的漏报漏洞
+**【漏洞原因分析】**
+当前的 `find_matches_reverse_jump` 函数存在严重的漏报漏洞（54个结果掉到14个）。
+原因：代码将光标 `z` 作为“底边”进行逆向扫描。当底边 `z` 是废行时，它只杀死了以 `z` 为底边的窗口（即左上角 `z - H + 1`）。左上角 `z - H` 的窗口（底边为 `z - 1`）根本不需要 `z` 行，但代码却粗暴地跳跃了 H 行，导致大量合法的“顶部”窗口被遗忘。
+**【修复方案：重构为“左上角光标”逆向扫描】**
+必须将光标重新定义为“左上角” `z_top`，从 `z_end - H + 1` 逆向扫描至 `z_start`。
+在此逻辑下，如果 `z_top` 行是废行，它将杀死左上角在 `[z_top - H + 1, z_top]` 的所有窗口。由于是逆向扫描，这些窗口尚未被检查，因此可以直接将光标安全跳跃到 `z_top - H`，**实现真正的零漏报安全跳跃**。
+请使用以下**完全重写**的逻辑替换原有的 `find_matches_reverse_jump` 函数：
 ```rust
-// 内层 Z 循环，步进 1
-for z in z_start..=(z_end - pat_h as i32 + 1) {
-    // 1. 环形滑入新行
-    let new_z = z + pat_h as i32;
-    if new_z <= z_end {
-        // 错误在这里：z - z_start + pat_h - 1
-        let new_dy = ((z - z_start + pat_h as i32 - 1) as usize) % pat_h;
-        curr_rows[new_dy] = generate_u64_chunk(seed, curr_x, new_z);
-        // ...
-    }
-    // 然后使用 curr_rows 遍历匹配
-    for &dy_idx in &pattern_clone.row_order {
-        let actual_dy = ((z - z_start + dy_idx as i32) as usize) % pat_h;
-        // ...
-    }
-}
-```
-**错误原因分析：**
-假设图案高度 `pat_h = 3`。在进入循环前，你已经预读了 `z_start`, `z_start+1`, `z_start+2` 的数据。
-当 `z = z_start` 时：
-*   循环内判断的是 `z_start` 到 `z_start+2` 这三行。
-*   此时你要为下一轮 `z_start+1` 准备数据，需要加载 `new_z = z_start + 3`。
-*   `new_z` 应该覆盖掉最老的缓存，即 `z_start` 的数据。`z_start` 对应的缓存索引是 `0 % 3 = 0`。
-*   但代码计算出的 `new_dy = (0 + 3 - 1) % 3 = 2`。它覆盖了 `z_start+2` 的数据！
-*   这导致下一轮循环时，`z_start+2` 的数据丢失了，读取到了错乱的历史数据。
-**修复方案：**
-被覆盖的索引应该是**当前轮次的起点 `z` 对应的索引**。
-```rust
-// 内层 Z 循环，步进 1
-for z in z_start..=(z_end - pat_h as i32 + 1) {
-    // 此时 curr_rows 中装的是 z, z+1, ..., z+pat_h-1 的数据
-    // ... 执行匹配逻辑 (不要变动) ...
-    let mut combined = !0u64;
-    for &dy_idx in &pattern_clone.row_order {
-        let actual_dy = ((z - z_start + dy_idx as i32) as usize) % pat_h;
-        // ... 匹配逻辑 ...
-    }
-    // 提取结果 (不要变动)
-    // ...
-    // 【修复点】：为下一次循环 (z+1) 准备，加载 z+pat_h 的数据
-    let new_z = z + pat_h as i32;
-    if new_z <= z_end {
-        // 被覆盖的应该是当前 z 对应的索引，因为下一轮 z+1 就不需要 z 的数据了
-        let overwrite_idx = (z - z_start) as usize % pat_h;
-        curr_rows[overwrite_idx] = generate_u64_chunk(seed, curr_x, new_z);
-        next_rows[overwrite_idx] = if next_x <= x_end { 
-            generate_u64_chunk(seed, next_x, new_z) 
-        } else { 
-            0 
+/// 实验性：逆向扫描 + 废行跳跃算法（完美修复版）
+/// 
+/// 核心思想（零漏报安全跳跃）：
+/// 1. 光标定义为“左上角” z_top，从 z_end - H + 1 逆向扫描至 z_start。
+/// 2. 维护一个大小为 H 的缓存 rows[0..H-1]，对应 [z_top, z_top + H - 1] 行的数据。
+/// 3. 如果发现 z_top 行（rows[0]）是废行，说明跨越 z_top 的所有窗口失败，
+///    即左上角在 [z_top - H + 1, z_top] 的窗口全失败。
+///    由于是逆向扫描，这些窗口尚未检查，因此直接将光标跳跃到 z_top - H！
+///    此时缓存完全失效，需重新生成。
+/// 4. 如果不是废行，则用当前 H 行缓存严格验证匹配，然后光标仅退 1 行，并滑动缓存。
+#[allow(dead_code)]
+fn find_matches_reverse_jump(pre: &Preprocessed) -> (Vec<(i32, i32)>, u64) {
+    let seed = pre.seed;
+    let limit = pre.limit;
+    let x_start = pre.x_start;
+    let x_end = pre.x_end;
+    let z_start = pre.z_start;
+    let z_end = pre.z_end;
+    let pattern = &pre.pattern;
+    let pat_h = pattern.height;
+    
+    // 计算总区块数
+    let x_range = (x_end - x_start + 1) as i64;
+    let z_range = (z_end - z_start + 1) as i64;
+    let total_blocks = x_range * z_range;
+    
+    let num_threads = num_cpus::get();
+    let total_x = x_end - x_start + 1;
+    let chunk_x = total_x / num_threads as i32;
+    let mut handles = Vec::new();
+    
+    for t in 0..num_threads {
+        let t_x_start = x_start + (t as i32) * chunk_x;
+        let t_x_end = if t == num_threads - 1 {
+            x_end
+        } else {
+            t_x_start + chunk_x + pattern.width as i32 - 1
         };
+        let pattern_clone = pattern.clone();
+        
+        let handle = std::thread::spawn(move || {
+            let mut local_results = Vec::new();
+            let mut curr_x = t_x_start;
+            
+            while curr_x <= t_x_end {
+                let next_x = curr_x + 64;
+                
+                // 逆向扫描的起始左上角 z_top
+                let mut z_top = z_end - pat_h as i32 + 1;
+                
+                // 初始化缓存 rows，大小为 pat_h
+                let mut curr_rows = vec![0u64; pat_h];
+                let mut next_rows = vec![0u64; pat_h];
+                
+                // 辅助函数：生成指定 z 坐标的 128 位宽地图
+                let gen_wide = |z_coord: i32| -> u128 {
+                    let curr = generate_u64_chunk(seed, curr_x, z_coord);
+                    let next = if next_x <= x_end {
+                        generate_u64_chunk(seed, next_x, z_coord)
+                    } else {
+                        0
+                    };
+                    ((next as u128) << 64) | (curr as u128)
+                };
+                
+                // 初始化缓存：[z_top, z_top + pat_h - 1]
+                for i in 0..pat_h {
+                    let z_coord = z_top + i as i32;
+                    let wide = gen_wide(z_coord);
+                    curr_rows[i] = wide as u64;
+                    next_rows[i] = (wide >> 64) as u64;
+                }
+                
+                while z_top >= z_start {
+                    // 当前缓存对应 [z_top, z_top + pat_h - 1]
+                    // rows[0] 就是当前 z_top 行的数据
+                    
+                    // 1. 判断 z_top 行是否是废行（不包含图案任意一行）
+                    let mut contains_any_row = false;
+                    for dy in 0..pat_h {
+                        let wide = ((next_rows[0] as u128) << 64) | (curr_rows[0] as u128);
+                        let mut row_match_ones = !0u64;
+                        let mut row_match_zeros = !0u64;
+                        for &dx in &pattern_clone.ones[dy] {
+                            row_match_ones &= (wide >> dx) as u64;
+                        }
+                        for &dx in &pattern_clone.zeros[dy] {
+                            row_match_zeros &= ((!wide) >> dx) as u64;
+                        }
+                        if (row_match_ones & row_match_zeros) != 0 {
+                            contains_any_row = true;
+                            break;
+                        }
+                    }
+                    
+                    if !contains_any_row {
+                        // 2. 废行触发！跨越 z_top 的窗口全失败
+                        // 左上角在 [z_top - pat_h + 1, z_top] 的窗口都不用看了
+                        // 直接将光标跳到 z_top - pat_h
+                        z_top -= pat_h as i32;
+                        
+                        // 如果跳跃后仍在边界内，缓存完全失效，需重新生成
+                        if z_top >= z_start {
+                            for i in 0..pat_h {
+                                let z_coord = z_top + i as i32;
+                                let wide = gen_wide(z_coord);
+                                curr_rows[i] = wide as u64;
+                                next_rows[i] = (wide >> 64) as u64;
+                            }
+                        }
+                    } else {
+                        // 3. 不是废行，验证当前左上角 z_top 的完整窗口
+                        let mut combined = !0u64;
+                        for &dy_idx in &pattern_clone.row_order {
+                            let wide = ((next_rows[dy_idx] as u128) << 64) | (curr_rows[dy_idx] as u128);
+                            let mut row_match_ones = !0u64;
+                            let mut row_match_zeros = !0u64;
+                            for &dx in &pattern_clone.ones[dy_idx] {
+                                row_match_ones &= (wide >> dx) as u64;
+                            }
+                            for &dx in &pattern_clone.zeros[dy_idx] {
+                                row_match_zeros &= ((!wide) >> dx) as u64;
+                            }
+                            combined &= row_match_ones & row_match_zeros;
+                            if combined == 0 {
+                                break;
+                            }
+                        }
+                        
+                        // 提取匹配结果
+                        if combined != 0 {
+                            let mut temp = combined;
+                            while temp != 0 {
+                                let offset = temp.trailing_zeros() as i32;
+                                local_results.push((curr_x + offset, z_top));
+                                temp &= temp - 1;
+                            }
+                        }
+                        
+                        // 4. 光标仅退 1 行，滑动缓存
+                        z_top -= 1;
+                        if z_top >= z_start {
+                            // 缓存滑动：丢弃最底行(rows[pat_h-1])，所有行下移，顶部(rows[0])生成新数据
+                            for i in (1..pat_h).rev() {
+                                curr_rows[i] = curr_rows[i - 1];
+                                next_rows[i] = next_rows[i - 1];
+                            }
+                            let wide = gen_wide(z_top);
+                            curr_rows[0] = wide as u64;
+                            next_rows[0] = (wide >> 64) as u64;
+                        }
+                    }
+                }
+                curr_x += 64;
+            }
+            local_results
+        });
+        handles.push(handle);
     }
+    
+    // 汇总结果并去重
+    let mut results = Vec::new();
+    for handle in handles {
+        if let Ok(mut local_res) = handle.join() {
+            results.append(&mut local_res);
+        }
+    }
+    results.sort_unstable();
+    results.dedup();
+    
+    if limit > 0 && results.len() > limit {
+        results.truncate(limit);
+    }
+    (results, total_blocks as u64)
 }
 ```
-### 三、 其他建议优化（非致命，可提升健壮性）
-1.  **清理废弃代码**：
-    `matcher.rs` 中的 `find_matches` 和 `matches_pattern_top_left` 是旧版的标量逻辑，虽然加了 `#[allow(dead_code)]`，但留着会增加维护心智负担，建议直接删除。
-2.  **多线程 `limit` 提前终止**：
-    目前代码是等所有线程跑完，汇总后 `if limit > 0 && results.len() > limit { results.truncate(limit); }`。如果全图很大，但用户只要前 10 个结果，这会浪费大量算力。
-    *进阶做法*：引入 `Arc<AtomicUsize>`，每个线程找到一个结果就 `fetch_add(1)`，如果超过 `limit`，线程直接 `break` 退出循环。不过这属于更深层优化，目前如果能秒出结果，不改也行。
-**总结**：
-除了那个环形缓存的索引 Bug，这套代码的底层逻辑和工程实现堪称完美。修掉那个 Bug 后，这就是一份可以直接用于生产的极速匹配引擎！
+**【测试要求】**
+1. 将顶部开关改回 `true`：`const EXPERIMENTAL_REVERSE_JUMP_MODE: bool = true;`
+2. 使用之前的 3x3 测试用例运行，确认结果数量**恢复为 54 个**，且速度依然保持极高的水准。
+3. 测试通过后，将开关改回 `false` 并固定。
+请立即执行此修复方案，彻底封死滑动窗口的漏报漏洞！
